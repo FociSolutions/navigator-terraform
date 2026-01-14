@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: 1.0.0 → 1.1.1
+Version Change: 1.0.0 → 2.0.0
 Date: 2026-01-14
 
 Changes:
@@ -9,6 +9,7 @@ Changes:
 - REMOVED: Progressive Environment Complexity (Implementation Approach) [v1.1.0]
 - REORDERED: Existing Architecture Principles renumbered (Simplicity → #2, Reliability → #3, Cost → #4) [v1.1.0]
 - UPDATED: Configuration-Driven Environment Strategy - adopted valentine-terraform approach [v1.1.1]
+- REDEFINED: Leverage Verified Modules → Prefer Resource Simplicity (BREAKING CHANGE) [v2.0.0]
 
 Template Consistency Status:
 - ✅ plan-template.md: No changes required - Principles Check already accommodates principles
@@ -18,11 +19,12 @@ Template Consistency Status:
 
 Follow-up TODOs: None
 
-Rationale for version 1.1.1 (PATCH):
-- Clarified Configuration-Driven Environment Strategy with concrete approach from valentine-terraform
-- Introduced Terragrunt-based orchestration pattern with shared modules
-- Updated to reflect directory-based environment isolation and conditional resources
-- No breaking changes to governance or principle definitions
+Rationale for version 2.0.0 (MAJOR):
+- BREAKING: Fundamentally reversed IaC Code Principle from "prefer modules" to "prefer direct resources"
+- This is backward incompatible guidance - existing infrastructure following v1.x "module-first" approach
+  will conflict with new "resource-first" principle
+- Migration guidance: Review existing module usage and consider replacing with direct azurerm resources
+  where module abstraction adds unnecessary complexity
 -->
 
 # Navigator Azure Infrastructure Principles
@@ -108,22 +110,32 @@ production availability.
 
 ## IaC Code Principles
 
-### Leverage Verified Modules
+### Prefer Resource Simplicity
 
-Infrastructure code should reuse verified, community-maintained modules to accelerate
-development and reduce errors. For Azure Terraform deployments, verified modules provide
-tested patterns that follow Azure best practices and security standards.
+Infrastructure code must prioritize clarity and maintainability through direct resource
+definitions over module abstractions. For Navigator's focused Azure deployment, direct
+azurerm resources provide transparency, reduce indirection, and simplify debugging
+compared to wrapped module interfaces that obscure configuration details.
 
-Use Azure Verified Modules (AVM) from the terraform-azurerm-* namespace for core
-infrastructure (virtual networks, resource groups, App Service, PostgreSQL). Pin module
-versions using exact version constraints (= X.Y.Z) since modules are not captured in
-.terraform.lock.hcl. Prefer official modules over custom resources for standard
-infrastructure patterns. Only build custom modules when organizational requirements
-diverge significantly from community patterns.
+Use direct azurerm resource blocks as the default approach (azurerm_app_service,
+azurerm_postgresql_flexible_server, azurerm_virtual_network, azurerm_storage_account).
+Resource blocks make configuration explicit, enable straightforward troubleshooting, and
+avoid module version management overhead. Reserve modules for scenarios where direct
+resources genuinely don't fit: (1) complex multi-resource patterns requiring validated
+composition (e.g., verified VPC modules with 10+ interdependent resources), (2)
+organizational standards mandating specific module usage, or (3) patterns requiring
+cross-resource validation logic impossible with individual resources.
 
-**Progressive Application**: Start with verified modules in Baseline environments to
-establish patterns. Extend with custom configuration in Enhanced environments only when
-necessary to meet specific requirements.
+When modules are necessary, prefer Azure Verified Modules with exact version pinning
+(= X.Y.Z) and comprehensive documentation. Avoid module proliferation - every module
+adds abstraction layers requiring additional cognitive load to understand actual
+infrastructure configuration.
+
+**Progressive Application**: Baseline environments use direct resources exclusively for
+maximum simplicity and learning. Enhanced environments may introduce verified modules
+only when managing complex patterns (e.g., enterprise networking with 20+ subnets,
+security groups, and route tables) where module abstraction reduces error-prone
+repetition.
 
 ### Validate During Development
 
@@ -241,4 +253,4 @@ Operational documentation (deployment runbooks, troubleshooting guides) addresse
 day-to-day HOW. Principles remain stable as foundational governance; operational guidance
 adapts more frequently to tooling updates and process improvements.
 
-**Version**: 1.1.1 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-14
+**Version**: 2.0.0 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-14
