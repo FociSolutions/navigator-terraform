@@ -1,0 +1,3 @@
+[submodule "navigator"]
+	path = navigator
+	url = https://github.com/canada-ca/navigator.git
