@@ -1,36 +1,56 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: UNVERSIONED → 1.0.0
+Version Change: 1.0.0 → 1.1.1
 Date: 2026-01-14
 
-Principles Established:
-- NEW: Design for Simplicity (Architecture Principle)
-- NEW: Design for Reliability and Resilience (Architecture Principle)
-- NEW: Optimize for Cost (Architecture Principle)
-- NEW: Leverage Verified Modules (IaC Code Principle)
-- NEW: Validate During Development (IaC Code Principle)
-- NEW: Manage Secrets Securely (IaC Code Principle)
-- NEW: Progressive Environment Complexity (Implementation Approach)
-- NEW: Configuration-Driven Environment Strategy (Implementation Approach)
+Changes:
+- NEW: Favor Managed Services (Architecture Principle 1) [v1.1.0]
+- REMOVED: Progressive Environment Complexity (Implementation Approach) [v1.1.0]
+- REORDERED: Existing Architecture Principles renumbered (Simplicity → #2, Reliability → #3, Cost → #4) [v1.1.0]
+- UPDATED: Configuration-Driven Environment Strategy - adopted valentine-terraform approach [v1.1.1]
 
 Template Consistency Status:
-- ✅ plan-template.md: Reviewed - "Principles Check" section already accommodates configured principles
-- ✅ spec-template.md: Reviewed - No changes required (technology-agnostic requirements)
-- ✅ tasks-template.md: Reviewed - Task phases align with principle-driven approach
-- ✅ No IAC command files found to update
+- ✅ plan-template.md: No changes required - Principles Check already accommodates principles
+- ✅ spec-template.md: No changes required (technology-agnostic requirements)
+- ✅ tasks-template.md: No changes required - Task phases align with principles
+- ✅ IAC command files: No changes required
 
-Follow-up TODOs: None - all placeholders filled
+Follow-up TODOs: None
 
-Rationale for version 1.0.0:
-- Initial principles establishment for Navigator Azure Terraform infrastructure
-- Defines governance framework for single-environment deployment across dev/staging/prod
-- Balances security, reliability, cost efficiency, and simplicity as specified
+Rationale for version 1.1.1 (PATCH):
+- Clarified Configuration-Driven Environment Strategy with concrete approach from valentine-terraform
+- Introduced Terragrunt-based orchestration pattern with shared modules
+- Updated to reflect directory-based environment isolation and conditional resources
+- No breaking changes to governance or principle definitions
 -->
 
 # Navigator Azure Infrastructure Principles
 
 ## Cloud Architecture Principles
+
+### Favor Managed Services
+
+Infrastructure must prioritize Azure-managed services over self-managed alternatives to
+reduce operational overhead, improve security posture, and accelerate delivery. Managed
+services provide built-in availability, automated patching, compliance certifications,
+and Azure's operational expertise, allowing the team to focus on application value rather
+than infrastructure maintenance.
+
+**Baseline (Dev)**: Use Azure-managed services for all core infrastructure components.
+Deploy Azure App Service for compute (eliminates server management), Azure Database for
+PostgreSQL (automated backups, patching), and Azure Storage Account (built-in redundancy).
+Avoid self-managed VMs, container orchestration clusters, or database installations.
+Accept default managed service configurations to minimize complexity.
+
+**Enhanced (Staging/Production)**: Leverage advanced managed service capabilities.
+Enable zone-redundant deployments for App Service and PostgreSQL to achieve high
+availability without managing replication. Use Azure Key Vault for secrets management,
+Azure Monitor and Application Insights for observability, and Azure Front Door or
+Application Gateway for traffic management. Integrate Azure-managed security services
+(Microsoft Defender for Cloud, Azure Policy) for compliance and threat protection.
+Prefer managed service features (auto-scaling, automated failover, managed backups)
+over custom implementations.
 
 ### Design for Simplicity
 
@@ -142,57 +162,52 @@ policies, and audit logging for secret access.
 
 ## Implementation Approaches
 
-### Progressive Environment Complexity
-
-The single-codebase, multi-environment approach requires infrastructure complexity to
-scale progressively from development through production. Configuration-driven decisions
-determine which features activate in each environment, avoiding separate codebases while
-maintaining appropriate controls.
-
-**Development**: Optimize for speed and simplicity. Use Basic B1 App Service, Burstable
-B1ms PostgreSQL, single-zone deployment in Canada Central. Implement auto-shutdown
-schedules (weeknights, weekends). Skip expensive monitoring, extensive backups, and
-multi-zone redundancy. Accept brief downtime for deployments. Use local Terraform state
-for solo development or shared Azure Storage Account with state locking for team
-collaboration.
-
-**Staging**: Mirror production architecture to validate operational patterns. Use
-Standard S1 App Service, General Purpose GP_Gen5_2 PostgreSQL, zone-redundant deployment
-across Canada Central availability zones. Implement production-like auto-scaling,
-monitoring with Azure Monitor, and daily backups with 7-day retention. Use shared Azure
-Storage Account backend with state locking. Scale down during off-hours to optimize
-costs.
-
-**Production**: Balance reliability with cost efficiency for internal tool usage. Use
-Standard S2 App Service with auto-scaling (2-10 instances), General Purpose GP_Gen5_4
-PostgreSQL with zone redundancy, daily backups with 30-day retention. Configure
-Application Insights for monitoring and alerting. Use Azure Storage Account backend with
-versioning and encryption. Target 99.9% availability (basic availability tier).
-
 ### Configuration-Driven Environment Strategy
 
-A single Terraform codebase deploys across all environments using variable files to
-control resource sizing, feature enablement, and cost/complexity trade-offs. This
-approach maintains consistency while enabling environment-appropriate architecture.
+Infrastructure code maintains DRY principles through a shared Terraform module deployed
+across environments via Terragrunt orchestration. This approach, based on the
+valentine-terraform reference architecture, enables environment-specific configuration
+while avoiding code duplication and maintaining consistency.
 
-Create separate variable files: terraform.tfvars.dev, terraform.tfvars.staging,
-terraform.tfvars.prod. Parameterize resource SKUs (app_service_sku, postgres_sku), scaling
-limits (min_instances, max_instances), feature flags (enable_auto_shutdown,
-enable_multi_zone), and backup retention (backup_retention_days). Use Terraform
-workspaces (terraform workspace select dev/staging/prod) to isolate state files while
-sharing code.
+**Module Structure**: Create a shared Terraform module under `terraform/azure/` containing
+all infrastructure definitions (provider.tf, variables.tf, app-service.tf, postgresql.tf,
+vnet.tf, monitoring.tf, etc.). Use Terragrunt configuration files in
+`terraform/env/{dev,staging,production}/terragrunt.hcl` that reference the shared module
+via `source = "../..//azure"`. Each environment's Terragrunt file contains
+environment-specific inputs parameterizing resource sizing, feature enablement, and
+deployment configuration.
 
-Deploy to environments sequentially: validate in dev → promote to staging → deploy to
-production. Use consistent resource naming with environment prefixes
-(nav-dev-app-service, nav-prod-postgres). Tag all resources with environment, project,
-and cost-center for Azure Cost Management tracking.
+**Environment Parameterization**: Use Terragrunt `inputs` block to control differences:
+resource SKUs (app_service_sku, postgres_sku), scaling limits (min_instances,
+max_instances), feature flags (create_application_insights, enable_auto_shutdown,
+enable_zone_redundancy), backup retention (backup_retention_days), domain names, and
+billing codes. Implement conditional resource creation in the shared module using count
+expressions (e.g., `count = var.create_application_insights ? 1 : 0`) allowing
+development environments to skip expensive features while production enables comprehensive
+capabilities.
+
+**State Isolation**: Terragrunt auto-generates separate Azure Storage Account backends per
+environment. Configure remote_state with unique container names (navigator-dev-tf,
+navigator-staging-tf, navigator-prod-tf), encryption enabled, and environment-specific
+tags for cost attribution. Each environment manages independent state preventing
+cross-environment interference while maintaining identical infrastructure patterns.
+
+**Deployment Strategy**: Validate changes in dev environment first, then promote to
+staging for production-like validation, finally deploy to production. Use consistent
+resource naming with environment prefixes (nav-dev-app-service, nav-prod-postgres). Tag
+all resources with environment, project, and cost-center for Azure Cost Management
+tracking. Integrate GitHub Actions workflows with Azure OIDC authentication (Federated
+Identity Credentials) eliminating static credentials - dev/staging auto-deploy on merge
+to main, production deploys only on release publication providing controlled promotion.
 
 ## Governance
 
 **Authority and Precedence**: These principles govern all infrastructure development for
 the Navigator Azure deployment. They reflect the project requirements for a Government
 of Canada internal tool balancing security, reliability, cost efficiency, and simplicity.
-When architectural decisions conflict, these principles guide the resolution.
+When architectural decisions conflict, these principles guide the resolution. The "Favor
+Managed Services" principle takes precedence over self-managed alternatives unless
+managed services demonstrably cannot meet technical or compliance requirements.
 
 **Compliance and Accountability**: All infrastructure specifications, plans, and
 Terraform code must demonstrate alignment with these principles. Code reviews verify
@@ -209,9 +224,10 @@ internal tool reliability requirements and user impact.
 
 **Deviation and Exception Process**: Deviations from these principles require explicit
 acknowledgment and documented rationale in the architecture plan. Examples requiring
-justification: multi-region deployment (adds significant cost and complexity), Premium
-tier services (ensure value justifies cost), custom modules instead of verified modules
-(document why community solutions insufficient).
+justification: self-managed infrastructure instead of Azure-managed services (document
+why managed services cannot meet requirements), multi-region deployment (adds significant
+cost and complexity), Premium tier services (ensure value justifies cost), custom modules
+instead of verified modules (document why community solutions insufficient).
 
 **Amendment and Evolution**: These principles evolve as the Navigator application
 matures, Azure capabilities change, or Government of Canada requirements shift.
@@ -225,4 +241,4 @@ Operational documentation (deployment runbooks, troubleshooting guides) addresse
 day-to-day HOW. Principles remain stable as foundational governance; operational guidance
 adapts more frequently to tooling updates and process improvements.
 
-**Version**: 1.0.0 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-14
+**Version**: 1.1.1 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-14
