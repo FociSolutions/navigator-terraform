@@ -1,256 +1,244 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: 1.0.0 → 2.0.0
-Date: 2026-01-14
+Version Change: 2.1.0 → 3.0.0
+Date: 2026-01-15
 
 Changes:
-- NEW: Favor Managed Services (Architecture Principle 1) [v1.1.0]
-- REMOVED: Progressive Environment Complexity (Implementation Approach) [v1.1.0]
-- REORDERED: Existing Architecture Principles renumbered (Simplicity → #2, Reliability → #3, Cost → #4) [v1.1.0]
-- UPDATED: Configuration-Driven Environment Strategy - adopted valentine-terraform approach [v1.1.1]
-- REDEFINED: Leverage Verified Modules → Prefer Resource Simplicity (BREAKING CHANGE) [v2.0.0]
+- MERGED: "Favor Managed Services" + "Enforce Cloud Service Hierarchy" → "Prefer Managed Services" (BREAKING) [v3.0.0]
+- MERGED: "Validate During Development" + "Design for Continuous Deployment" → "Automate Validation and Deployment" (BREAKING) [v3.0.0]
+- UPDATED: All principles now cloud-agnostic (generic service types instead of Azure-specific names)
+- UPDATED: Implementation Approaches - condensed and generalized for any cloud provider
+- CONDENSED: Governance section - removed redundant language, consolidated deviation/justification guidance
+- REMOVED: Duplicate content across principles (zero-downtime mentioned in multiple places)
 
 Template Consistency Status:
-- ✅ plan-template.md: No changes required - Principles Check already accommodates principles
+- ✅ plan-template.md: No changes required - Principles Check accommodates consolidated principles
 - ✅ spec-template.md: No changes required (technology-agnostic requirements)
 - ✅ tasks-template.md: No changes required - Task phases align with principles
 - ✅ IAC command files: No changes required
 
 Follow-up TODOs: None
 
-Rationale for version 2.0.0 (MAJOR):
-- BREAKING: Fundamentally reversed IaC Code Principle from "prefer modules" to "prefer direct resources"
-- This is backward incompatible guidance - existing infrastructure following v1.x "module-first" approach
-  will conflict with new "resource-first" principle
-- Migration guidance: Review existing module usage and consider replacing with direct azurerm resources
-  where module abstraction adds unnecessary complexity
+Rationale for version 3.0.0 (MAJOR):
+- BREAKING: Removed two principles through consolidation (5 arch + 4 code → 4 arch + 3 code)
+- Fundamental restructuring - merged overlapping principles that address same outcomes
+- Backward incompatible - references to "Enforce Cloud Service Hierarchy" or "Design for Continuous Deployment" 
+  as distinct principles will no longer resolve
+- Migration guidance: Principle intent preserved but consolidated - no infrastructure changes needed
 -->
 
-# Navigator Azure Infrastructure Principles
+# Navigator Infrastructure Principles
 
-## Cloud Architecture Principles
+## Architecture Principles
 
-### Favor Managed Services
+### Prefer Managed Services
 
-Infrastructure must prioritize Azure-managed services over self-managed alternatives to
-reduce operational overhead, improve security posture, and accelerate delivery. Managed
-services provide built-in availability, automated patching, compliance certifications,
-and Azure's operational expertise, allowing the team to focus on application value rather
-than infrastructure maintenance.
+Infrastructure must prioritize fully-managed platform services (PaaS/SaaS) over
+self-managed infrastructure (IaaS) to reduce operational overhead, improve security
+posture, and accelerate delivery. Follow the service hierarchy: Software as a Service
+first, Platform as a Service second, Infrastructure as a Service only when higher-level
+services cannot meet requirements. Managed services provide built-in availability,
+automated patching, and compliance certifications, allowing teams to focus on
+application value rather than infrastructure maintenance.
 
-**Baseline (Dev)**: Use Azure-managed services for all core infrastructure components.
-Deploy Azure App Service for compute (eliminates server management), Azure Database for
-PostgreSQL (automated backups, patching), and Azure Storage Account (built-in redundancy).
-Avoid self-managed VMs, container orchestration clusters, or database installations.
-Accept default managed service configurations to minimize complexity.
+**Baseline (Dev)**: Use managed platform services for all core components: managed
+compute (eliminates server management), managed databases (automated backups, patching),
+and managed storage (built-in redundancy). Avoid self-managed virtual machines,
+container orchestration, or database installations. Accept default service
+configurations to minimize complexity. Evaluate SaaS offerings for auxiliary functions
+before building custom solutions.
 
-**Enhanced (Staging/Production)**: Leverage advanced managed service capabilities.
-Enable zone-redundant deployments for App Service and PostgreSQL to achieve high
-availability without managing replication. Use Azure Key Vault for secrets management,
-Azure Monitor and Application Insights for observability, and Azure Front Door or
-Application Gateway for traffic management. Integrate Azure-managed security services
-(Microsoft Defender for Cloud, Azure Policy) for compliance and threat protection.
-Prefer managed service features (auto-scaling, automated failover, managed backups)
-over custom implementations.
+**Enhanced (Staging/Production)**: Leverage advanced managed service capabilities:
+zone-redundant deployments for high availability, managed secrets storage, managed
+observability platforms, and managed security services. Prefer managed service features
+(auto-scaling, automated failover) over custom implementations. Reserve self-managed
+infrastructure only for specific requirements that managed services cannot satisfy.
+Require documented rationale for any self-managed infrastructure adoption.
 
 ### Design for Simplicity
 
-Phoenix LiveView applications deployed on Azure should prioritize architectural
-simplicity to reduce operational overhead and accelerate iteration. For an internal
-Government of Canada tool with a single codebase deployed across dev, staging, and
-production environments, simplicity minimizes complexity that could introduce bugs,
-increase costs, or slow development velocity.
+Infrastructure should prioritize architectural simplicity to reduce operational overhead
+and accelerate iteration. For an internal Government of Canada tool with a single
+codebase deployed across dev, staging, and production environments, simplicity minimizes
+complexity that could introduce bugs, increase costs, or slow development velocity.
 
-**Baseline (Dev)**: Use single-zone deployments, minimal resource instances, and
-default Azure service configurations. Deploy Azure App Service in Basic tier, Azure
-Database for PostgreSQL in Burstable tier, and avoid unnecessary networking complexity.
+**Baseline (Dev)**: Use single-zone deployments, minimal resource instances, and default
+service configurations. Deploy entry-level service tiers and avoid unnecessary
+networking complexity.
 
-**Enhanced (Staging/Production)**: Increase to zone-redundant deployments with Standard
-tiers for App Service and General Purpose tiers for PostgreSQL. Add essential features
-like auto-scaling and load balancing, but avoid over-engineering with multi-region
-architectures or complex service meshes unless justified by specific requirements.
+**Enhanced (Staging/Production)**: Increase to zone-redundant deployments with
+production-grade service tiers. Add essential features like auto-scaling and load
+balancing, but avoid over-engineering with multi-region architectures or complex service
+meshes unless justified by specific requirements.
 
 ### Design for Reliability and Resilience
 
 Infrastructure resilience must match business criticality while balancing cost
 efficiency. For Navigator, an internal threat modeling tool, availability is important
-but must be weighed against infrastructure complexity and cost. The single environment
-approach requires reliability patterns that scale from development to production through
-configuration.
+but must be weighed against infrastructure complexity and cost. Design systems to assume
+failure will happen, handle errors gracefully through distributed architecture patterns,
+and support zero-downtime deployments for both planned and unplanned maintenance.
 
-**Baseline (Dev)**: Accept single-zone deployment with basic health checks. Tolerate
-brief downtime for deployments and maintenance. Use Azure App Service deployment slots
-for zero-downtime deployments when convenient.
+**Baseline (Dev)**: Accept single-zone deployment with basic health checks. Implement
+graceful degradation for non-critical features. Use deployment mechanisms supporting
+zero-downtime when convenient. Design applications to handle transient failures with
+retry logic and connection pooling.
 
-**Enhanced (Staging/Production)**: Implement zone-redundant deployments across Azure
-availability zones. Configure auto-scaling policies based on CPU and memory utilization
-(scale out at 70% CPU). Enable automated backups for Azure Database for PostgreSQL with
-7-day retention. Implement health checks for App Service and database connection
-monitoring. Target basic availability (99.9%) appropriate for internal tools.
+**Enhanced (Staging/Production)**: Implement zone-redundant deployments using
+distributed architecture patterns. Configure auto-scaling policies based on resource
+utilization. Enable automated backups with appropriate retention. Implement
+comprehensive health checks and connection monitoring. Use blue-green or canary
+deployment patterns for zero-downtime production releases. Monitor performance and
+behavior actively. Target appropriate availability (99.9%) for internal tools.
 
 ### Optimize for Cost
 
 Government of Canada environments require careful cost management, balancing performance
-requirements with fiscal responsibility. The single environment approach across dev,
-staging, and production enables cost optimization through right-sizing and
-environment-appropriate resource allocation.
+requirements with fiscal responsibility. The environment-based approach enables cost
+optimization through right-sizing and environment-appropriate resource allocation.
 
-**Baseline (Dev)**: Use smallest viable SKUs (App Service Basic B1, PostgreSQL Burstable
-B1ms). Implement auto-shutdown schedules for development resources (evenings, weekends).
-Disable expensive features like high-frequency backups, extensive monitoring, and
-multi-zone redundancy.
+**Baseline (Dev)**: Use smallest viable service tiers. Implement auto-shutdown schedules
+for development resources (evenings, weekends). Disable expensive features like
+high-frequency backups, extensive monitoring, and multi-zone redundancy.
 
 **Enhanced (Staging/Production)**: Right-size based on actual usage patterns. Use
-Standard tier for App Service and General Purpose tier for PostgreSQL. Leverage Azure
-reservations for production resources with predictable workloads. Monitor costs through
-Azure Cost Management and establish budget alerts. Archive logs to cool storage after
-30 days. Scale down staging environment during non-business hours while maintaining
-production availability.
+appropriate production service tiers. Leverage reserved capacity for resources with
+predictable workloads. Monitor costs and establish budget alerts. Archive logs to
+cheaper storage tiers after retention periods. Scale down non-production environments
+during non-business hours while maintaining production availability.
 
 ## IaC Code Principles
 
 ### Prefer Resource Simplicity
 
 Infrastructure code must prioritize clarity and maintainability through direct resource
-definitions over module abstractions. For Navigator's focused Azure deployment, direct
-azurerm resources provide transparency, reduce indirection, and simplify debugging
-compared to wrapped module interfaces that obscure configuration details.
+definitions over module abstractions. Direct resources provide transparency, reduce
+indirection, and simplify debugging compared to wrapped module interfaces that obscure
+configuration details.
 
-Use direct azurerm resource blocks as the default approach (azurerm_app_service,
-azurerm_postgresql_flexible_server, azurerm_virtual_network, azurerm_storage_account).
-Resource blocks make configuration explicit, enable straightforward troubleshooting, and
-avoid module version management overhead. Reserve modules for scenarios where direct
-resources genuinely don't fit: (1) complex multi-resource patterns requiring validated
-composition (e.g., verified VPC modules with 10+ interdependent resources), (2)
-organizational standards mandating specific module usage, or (3) patterns requiring
-cross-resource validation logic impossible with individual resources.
+Use direct resource blocks as the default approach. Resource blocks make configuration
+explicit, enable straightforward troubleshooting, and avoid module version management
+overhead. Reserve modules for scenarios where direct resources genuinely don't fit:
+(1) complex multi-resource patterns requiring validated composition, (2) organizational
+standards mandating specific module usage, or (3) patterns requiring cross-resource
+validation logic impossible with individual resources.
 
-When modules are necessary, prefer Azure Verified Modules with exact version pinning
-(= X.Y.Z) and comprehensive documentation. Avoid module proliferation - every module
-adds abstraction layers requiring additional cognitive load to understand actual
-infrastructure configuration.
+When modules are necessary, prefer verified modules from cloud provider registries with
+exact version pinning and comprehensive documentation. Avoid module proliferation -
+every module adds abstraction layers requiring additional cognitive load.
 
 **Progressive Application**: Baseline environments use direct resources exclusively for
 maximum simplicity and learning. Enhanced environments may introduce verified modules
-only when managing complex patterns (e.g., enterprise networking with 20+ subnets,
-security groups, and route tables) where module abstraction reduces error-prone
+only when managing complex patterns where module abstraction reduces error-prone
 repetition.
 
-### Validate During Development
+### Automate Validation and Deployment
 
-Infrastructure code must be validated early and continuously to catch errors before
-deployment. Validation reduces feedback cycles, prevents costly mistakes, and maintains
-code quality across the team.
+Infrastructure code must be validated early and continuously through automated testing
+and deployment pipelines. Treat infrastructure as code subject to the same quality gates
+as application code. Support continuous integration and continuous deployment practices
+enabling rapid, safe delivery of infrastructure changes with zero-downtime deployments
+for planned maintenance.
 
-Use `terraform validate` to check syntax and configuration correctness after each file
-modification. Run `terraform plan` at tier boundaries (network complete, compute
-complete) to preview changes before proceeding. Integrate Checkov or tfsec for security
-scanning to catch misconfigurations (exposed storage accounts, missing encryption,
-overly permissive network rules). Format code with `terraform fmt` to maintain
-consistency. Validate in development environments before promoting configurations to
-staging and production.
+Use validation tooling to check syntax and configuration correctness after each
+modification. Run preview/plan commands at tier boundaries to review changes before
+proceeding. Integrate security scanning to catch misconfigurations (exposed resources,
+missing encryption, overly permissive rules). Format code automatically to maintain
+consistency. Structure code to enable incremental changes without full rebuilds. Use
+lifecycle controls to prevent accidental resource destruction. Tag resources with
+version metadata for rollback capability. Separate state per environment preventing
+cross-environment changes.
 
-**Progressive Application**: Baseline environments require syntax validation and plan
-review. Enhanced environments add security scanning, cost estimation with Infracost, and
-automated validation in CI/CD pipelines.
+**Progressive Application**: Baseline environments require syntax validation, plan
+review, and basic CI checks (validate, format). Enhanced environments implement full
+CI/CD automation with automated plan generation on pull requests, security scanning
+gates, cost estimation, approval workflows, and automated deployment to non-production
+environments. Production deployments require manual approval after automated validation.
 
 ### Manage Secrets Securely
 
 Secrets and sensitive configuration must never be hardcoded in infrastructure code or
-committed to version control. Azure Key Vault provides centralized secret management
-with access controls and audit logging.
+committed to version control. Use managed secret storage services with access controls
+and audit logging. Perform threat modeling during design to minimize attack surface by
+limiting services exposed and information exchanged. Design secure interconnections
+through secure APIs and managed connectivity.
 
-Store database passwords, API keys, and connection strings in Azure Key Vault. Reference
-secrets in Terraform using azurerm_key_vault_secret data sources rather than hardcoding
-values. Use Azure Managed Identities for App Service to access Key Vault without storing
-credentials. Never commit .tfvars files containing secrets to git - use .gitignore to
-exclude terraform.tfvars files and document required variables in README.md. For local
-development, use environment variables or terraform.tfvars.local (gitignored).
+Store credentials and keys in managed secret storage. Reference secrets via data sources
+rather than hardcoding. Use platform-managed identities to access secrets without
+storing credentials. Never commit variable files containing secrets - use ignore files
+and document required variables. Apply proportionate security measures protecting data
+at rest and in transit. Enforce secure protocols (HTTPS, TLS 1.2+) for all
+communications.
 
 **Progressive Application**: Baseline environments require no hardcoded credentials and
-basic Key Vault usage. Enhanced environments add Managed Identities, secret rotation
-policies, and audit logging for secret access.
+basic secret storage usage. Enhanced environments add managed identities, secret
+rotation policies, audit logging for secret access, and threat modeling documentation.
 
 ## Implementation Approaches
 
 ### Configuration-Driven Environment Strategy
 
-Infrastructure code maintains DRY principles through a shared Terraform module deployed
-across environments via Terragrunt orchestration. This approach, based on the
-valentine-terraform reference architecture, enables environment-specific configuration
-while avoiding code duplication and maintaining consistency.
+Infrastructure code maintains DRY principles through a shared module deployed across
+environments with environment-specific configuration. This approach enables
+parameterization while avoiding duplication and maintaining consistency.
 
-**Module Structure**: Create a shared Terraform module under `terraform/azure/` containing
-all infrastructure definitions (provider.tf, variables.tf, app-service.tf, postgresql.tf,
-vnet.tf, monitoring.tf, etc.). Use Terragrunt configuration files in
-`terraform/env/{dev,staging,production}/terragrunt.hcl` that reference the shared module
-via `source = "../..//azure"`. Each environment's Terragrunt file contains
-environment-specific inputs parameterizing resource sizing, feature enablement, and
-deployment configuration.
+**Module Structure**: Create a shared module containing all infrastructure definitions
+(provider, variables, resources). Use orchestration configuration files per environment
+that reference the shared module and provide environment-specific inputs for resource
+sizing, feature enablement, and deployment configuration.
 
-**Environment Parameterization**: Use Terragrunt `inputs` block to control differences:
-resource SKUs (app_service_sku, postgres_sku), scaling limits (min_instances,
-max_instances), feature flags (create_application_insights, enable_auto_shutdown,
-enable_zone_redundancy), backup retention (backup_retention_days), domain names, and
-billing codes. Implement conditional resource creation in the shared module using count
-expressions (e.g., `count = var.create_application_insights ? 1 : 0`) allowing
-development environments to skip expensive features while production enables comprehensive
+**Environment Parameterization**: Use configuration inputs to control differences:
+service tiers, scaling limits, feature flags (observability, auto-shutdown, redundancy),
+backup retention, and cost attribution. Implement conditional resource creation allowing
+development environments to skip expensive features while production enables full
 capabilities.
 
-**State Isolation**: Terragrunt auto-generates separate Azure Storage Account backends per
-environment. Configure remote_state with unique container names (navigator-dev-tf,
-navigator-staging-tf, navigator-prod-tf), encryption enabled, and environment-specific
-tags for cost attribution. Each environment manages independent state preventing
+**State Isolation**: Use separate state storage per environment with encryption enabled
+and environment-specific metadata. Each environment manages independent state preventing
 cross-environment interference while maintaining identical infrastructure patterns.
 
-**Deployment Strategy**: Validate changes in dev environment first, then promote to
-staging for production-like validation, finally deploy to production. Use consistent
-resource naming with environment prefixes (nav-dev-app-service, nav-prod-postgres). Tag
-all resources with environment, project, and cost-center for Azure Cost Management
-tracking. Integrate GitHub Actions workflows with Azure OIDC authentication (Federated
-Identity Credentials) eliminating static credentials - dev/staging auto-deploy on merge
-to main, production deploys only on release publication providing controlled promotion.
+**Deployment Strategy**: Validate changes in dev first, promote to staging for
+production-like validation, then deploy to production. Use consistent naming with
+environment prefixes. Tag all resources with environment, project, and cost-center.
+Integrate CI/CD workflows with secure authentication eliminating static credentials -
+dev/staging auto-deploy on merge, production deploys only on release providing
+controlled promotion.
 
 ## Governance
 
 **Authority and Precedence**: These principles govern all infrastructure development for
-the Navigator Azure deployment. They reflect the project requirements for a Government
-of Canada internal tool balancing security, reliability, cost efficiency, and simplicity.
-When architectural decisions conflict, these principles guide the resolution. The "Favor
-Managed Services" principle takes precedence over self-managed alternatives unless
-managed services demonstrably cannot meet technical or compliance requirements.
+Navigator. They reflect requirements for a Government of Canada internal tool balancing
+security, reliability, cost efficiency, and simplicity. When architectural decisions
+conflict, these principles guide resolution. The "Prefer Managed Services" principle
+takes precedence over self-managed alternatives unless managed services demonstrably
+cannot meet technical or compliance requirements.
 
-**Compliance and Accountability**: All infrastructure specifications, plans, and
-Terraform code must demonstrate alignment with these principles. Code reviews verify
-compliance with security practices (no hardcoded secrets, proper network isolation) and
-cost optimization (appropriate SKUs, auto-shutdown schedules for dev). Automated
-validation through terraform validate, security scanning, and cost estimation enforces
-ongoing compliance.
+**Compliance and Accountability**: All infrastructure specifications, plans, and code
+must demonstrate alignment with these principles. Reviews verify compliance with
+security practices (no hardcoded secrets, proper isolation, threat modeling) and cost
+optimization (appropriate tiers, auto-shutdown schedules). Automated validation through
+syntax checking, security scanning, and cost estimation enforces ongoing compliance.
+Infrastructure must align with applicable guidance from Canadian Centre for Cyber
+Security IT Security Risk Management Framework (ITSG-22, ITSG-38).
 
-**Justification for Complexity**: Architectural decisions extending beyond Baseline
-patterns require documented justification. Development environments prioritize simplicity
-and cost efficiency. Staging mirrors production to validate operational patterns.
-Production justifies added complexity (zone redundancy, comprehensive monitoring) with
-internal tool reliability requirements and user impact.
+**Security Operations**: Enable event logging per GC Event Logging Guidance. Monitor
+systems to detect, prevent, and respond to attacks. Establish incident management plan
+aligned with GC Cyber Security Event Management Plan (GC CSEMP). Report incidents to
+Canadian Centre for Cyber Security. Implement patch management following GC Patch
+Management Guidance. Enforce secure protocols for all connections.
 
-**Deviation and Exception Process**: Deviations from these principles require explicit
-acknowledgment and documented rationale in the architecture plan. Examples requiring
-justification: self-managed infrastructure instead of Azure-managed services (document
-why managed services cannot meet requirements), multi-region deployment (adds significant
-cost and complexity), Premium tier services (ensure value justifies cost), custom modules
-instead of verified modules (document why community solutions insufficient).
+**Deviation Process**: Deviations from principles require explicit acknowledgment and
+documented rationale in architecture plans. Examples requiring justification:
+self-managed infrastructure when managed services exist, premium service tiers,
+multi-region deployment, or custom modules over verified modules. Development
+environments prioritize simplicity and cost efficiency. Production justifies added
+complexity with reliability requirements and user impact.
 
-**Amendment and Evolution**: These principles evolve as the Navigator application
-matures, Azure capabilities change, or Government of Canada requirements shift.
-Amendments follow semantic versioning (MAJOR for breaking governance changes, MINOR for
-new principles, PATCH for clarifications). Principle updates require review of existing
-infrastructure and migration guidance when changes impact deployed resources.
+**Amendment and Evolution**: Principles evolve as the application matures, cloud
+capabilities change, or government requirements shift. Amendments follow semantic
+versioning (MAJOR for breaking governance changes, MINOR for new principles, PATCH for
+clarifications). Updates require review of existing infrastructure and migration
+guidance when changes impact deployed resources.
 
-**Relationship to Operational Guidance**: These principles establish WHAT outcomes the
-infrastructure achieves and WHY they matter for the Navigator Azure deployment.
-Operational documentation (deployment runbooks, troubleshooting guides) addresses
-day-to-day HOW. Principles remain stable as foundational governance; operational guidance
-adapts more frequently to tooling updates and process improvements.
-
-**Version**: 2.0.0 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-14
+**Version**: 3.0.0 | **Ratified**: 2026-01-14 | **Last Amended**: 2026-01-15
