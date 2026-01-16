@@ -1,9 +1,9 @@
 # Architecture Plan: Navigator Azure Deployment
 
-**Branch**: `001-navigator-deploy` | **Date**: January 14, 2026 | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-navigator-deploy` | **Date**: January 14, 2026 (Updated: January 16, 2026) | **Spec**: [spec.md](./spec.md)
 **Input**: Infrastructure specification from `/specs/001-navigator-deploy/spec.md`
 
-**Note**: This plan provides lightweight architecture decisions informed by quick research. For deep research (Well-Architected Framework analysis, detailed module configurations, and provisioning quickstart), run `/iac.enrichplan` after planning.
+**Note**: This plan has been enriched with deep research. See [research.md](./research.md) for Well-Architected Framework analysis and best practices, [architecture.md](./architecture.md) for detailed infrastructure design, [quickstart.md](./quickstart.md) for step-by-step provisioning guide, and [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive Azure Verified Modules analysis.
 
 ## Summary
 
@@ -43,8 +43,7 @@ Before implementing this plan, ensure the following baseline infrastructure exis
 **Cloud Provider**: Microsoft Azure  
 **IaC Tool**: Terraform 1.9+ (latest stable as of January 2026)  
 **Provider Versions**: azurerm ~> 4.0 (latest stable, required for Container Apps native support)  
-**Module Versions**: Follow "Prefer Resource Simplicity" principle (v3.0.0) using direct azurerm resources as default; modules not used in this implementation  
-**Curated Modules**: Azure Verified Modules (only if complex patterns require validated composition)  
+**Module Versions**: Direct resources only - no modules used in this implementation (follows "Prefer Resource Simplicity" principle v3.0.0). See [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive analysis of Azure Verified Modules decision.  
 **State Backend**: Azure Blob Storage with state locking (azurerm backend)  
 **Environment Strategy**: Terragrunt with directory-based environments (terraform/env/{dev,staging,production}) referencing shared module (terraform/azure/)  
 **Testing**: terraform validate, terraform plan at tier boundaries  
@@ -86,6 +85,12 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
 **1. Prefer Resource Simplicity** ✅ (Principles v3.0.0)  
 - Uses direct azurerm resource blocks exclusively (azurerm_container_app, azurerm_postgresql_flexible_server, azurerm_virtual_network)
 - No modules used in this implementation - all resources defined directly for maximum transparency
+- **Azure Verified Modules (AVM) Re-Evaluation** (January 16, 2026): Comprehensive analysis confirmed direct resources remain optimal for Navigator's scale. See [avm-reevaluation.md](./avm-reevaluation.md) for:
+  - Component-by-component cost-benefit analysis (VNet, Container Apps, PostgreSQL, Key Vault, ACR)
+  - Quantitative metrics: Direct resources save 12-23 hours initial development, 2-3x faster debugging, 4-8x faster upgrades
+  - Pre-release risk assessment: ALL AVM modules < 1.0.0 with breaking changes expected
+  - GC compliance audit trail: Direct resources provide better security transparency
+  - Production deployment scenarios validating direct resource approach
 - Baseline environments use direct resources exclusively for maximum transparency and learning
 
 **2. Validate During Development** ✅  
@@ -189,11 +194,20 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
 
 **Network Security Groups (NSGs)**
 - Container Apps NSG:
-  - Inbound: Allow HTTPS (443) from Application Gateway subnet (or internet if no gateway), allow outbound to PostgreSQL subnet (5432) and internet (for OpenAI API)
-  - Outbound: Allow 443 to internet (OpenAI/Azure OpenAI), 5432 to PostgreSQL subnet, 443 to Key Vault
+  - Inbound: Allow HTTPS (443) from internet (public web application - unrestricted source is intentional and documented)
+  - Outbound: Segregated by destination for least-privilege access:
+    - Azure services: Allow 443 to AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
+    - Internet (conditional): Allow 443 to internet for OpenAI API integration (controlled by `enable_outbound_internet` variable, default: true)
+    - PostgreSQL: Allow 5432 to PostgreSQL subnet (existing rule)
 - PostgreSQL NSG:
   - Inbound: Allow 5432 from Container Apps subnet only
   - Outbound: Deny all (database does not initiate outbound connections)
+
+**Security Compliance**:
+- Trivy security scan findings (AVD-AZU-0047, AVD-AZU-0051) suppressed with documented business justifications
+- Inbound HTTPS from internet is required for public web application accessibility
+- Outbound traffic uses service tags for Azure-managed services (recommended security practice)
+- External API access (OpenAI) configurable via variable for environment-specific policies
 
 **DNS and TLS**
 - DNS Hosting: Azure DNS zone for custom domain (navigator-dev.cdssandbox.xyz, valentine.cds-snc.ca)
@@ -214,8 +228,11 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
 
 **Network Security**
 - Network Security Groups (NSGs):
-  - Container Apps NSG: Inbound 443 from internet (or Application Gateway), outbound to PostgreSQL (5432), internet (443 for APIs), Key Vault (443)
+  - Container Apps NSG:
+    - Inbound: 443 from internet (unrestricted for public web application - intentional design decision, documented in terraform/azure/security.tf)
+    - Outbound: Segregated rule set using service tags for Azure services (AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry) and conditional internet access (controlled by `enable_outbound_internet` variable)
   - PostgreSQL NSG: Inbound 5432 from Container Apps subnet only, outbound deny all
+  - Security Scanning: Trivy findings AVD-AZU-0047 (unrestricted inbound) and AVD-AZU-0051 (unrestricted outbound) suppressed with business justifications in IaC code
 - Private Endpoints:
   - PostgreSQL: Private endpoint in VNet (no public internet access)
   - Key Vault: Private endpoint for enhanced security (production, conditional)
@@ -298,6 +315,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
 | `enable_auto_shutdown` | true (evenings/weekends) | false | false |
 | `enable_zone_redundancy` | false | true | true |
 | `domain_name` | navigator-dev.cdssandbox.xyz | navigator-staging.cds-snc.ca | valentine.cds-snc.ca |
+| `enable_outbound_internet` | true | true | true |
 | `create_google_auth` | false (Azure AD B2C) | false (Azure AD B2C) | true (Google OAuth) |
 | `create_azure_ad_b2c` | true | true | false |
 
@@ -455,11 +473,10 @@ specs/001-navigator-deploy/
 ├── plan.md              # This file - architecture plan - /iac.plan
 ├── tasks.md             # Implementation tasks - /iac.tasks
 │
-│   # Optional enrichment artifacts (run /iac.enrichplan if needed):
-├── research.md          # Deep research: Well-Architected Framework, curated modules
-├── architecture.md      # Detailed infrastructure architecture design
-├── modules.md           # Module specifications (if using custom modules)
-└── quickstart.md        # Step-by-step provisioning guide
+│   # Enrichment artifacts (completed via /iac.enrichplan):
+├── research.md          # Deep research: Well-Architected Framework, Azure Verified Modules, best practices
+├── architecture.md      # Detailed infrastructure architecture design with component specifications
+└── quickstart.md        # Step-by-step provisioning guide for dev and production environments
 ```
 
 ### Source Code (repository root)

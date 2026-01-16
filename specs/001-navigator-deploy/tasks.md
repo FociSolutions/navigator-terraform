@@ -97,8 +97,8 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T052 [P] Create blob container for user uploads in terraform/azure/storage.tf
 - [ ] T053 [P] Configure storage lifecycle management (Archive Cool after 90 days, delete after 365) in terraform/azure/storage.tf
 - [ ] T054 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
-- [ ] T055 Run `cd terraform/env/dev && terragrunt validate` - compute/data tier checkpoint
-- [ ] T056 Run `cd terraform/env/dev && terragrunt plan` to preview infrastructure changes
+- [ ] T055 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
+- [ ] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
 
@@ -125,8 +125,8 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T069 Create terraform/azure/gh-oidc.tf with GitHub OIDC federated credentials for CI/CD
 - [ ] T070 Configure service principal with least-privilege RBAC (Contributor on Container App, read-only Key Vault) in terraform/azure/gh-oidc.tf
 - [ ] T071 [P] Configure NAT Gateway for outbound connectivity (conditional, production) in terraform/azure/vnet.tf
-- [ ] T072 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
-- [ ] T073 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
+- [ ] T072 Run `cd terraform/env/production && terragrunt validate` - application tier checkpoint
+- [ ] T073 Run `cd terraform/env/production && terragrunt plan` to preview application tier changes
 
 **Checkpoint**: Application tier complete - infrastructure ready for polish and final validation
 
@@ -155,7 +155,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T090 [P] Create .github/workflows/terraform-apply-dev.yml for auto-deploy dev on merge
 - [ ] T091 [P] Create .github/workflows/terraform-apply-prod.yml for manual production deployment
 - [ ] T092 Document deployment strategy (dev → validate → production) in root README.md
-- [ ] T093 Final validation: Run `cd terraform/env/dev && terragrunt validate` and confirm no errors
+- [ ] T093 Final validation: Run `cd terraform/env/production && terragrunt validate` and confirm no errors
 
 ---
 
