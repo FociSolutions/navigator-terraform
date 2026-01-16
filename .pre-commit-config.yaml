@@ -1,0 +1,23 @@
+repos:
+- repo: https://github.com/antonbabenko/pre-commit-terraform
+  rev: v1.101.0
+  hooks:
+    - id: terraform_fmt
+      args:
+        - --args=-recursive
+    - id: terraform_tflint
+    - id: terraform_trivy
+      args:
+        - --args=--skip-dirs="**/.terraform"
+        - --args=--severity="HIGH,CRITICAL"
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v6.0.0
+  hooks:
+    - id: check-added-large-files
+      name: Check for added large files
+    - id: end-of-file-fixer
+      name: Fix end of files
+    - id: trailing-whitespace
+      name: Trim trailing whitespace
+      args: [--markdown-linebreak-ext=md]
