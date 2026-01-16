@@ -29,27 +29,27 @@ Given that infrastructure description, do this:
      - "Implement multi-region disaster recovery" → "multi-region-dr"
 
 2. **Check for existing branches before creating new one**:
-   
+
    a. First, fetch all remote branches to ensure we have the latest information:
       ```bash
       git fetch --all --prune
       ```
-   
+
    b. Find the highest infrastructure number across all sources for the short-name:
       - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
       - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
       - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
-   
+
    c. Determine the next available number:
       - Extract all numbers from all three sources
       - Find the highest number N
       - Use N+1 for the new branch number
-   
+
    d. Run the script `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS"` with the calculated number and short-name:
       - Pass `--number N+1` and `--short-name "your-short-name"` along with the infrastructure description
       - Bash example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" --json --number 5 --short-name "production-vpc" "Deploy production VPC with public and private subnets"`
       - PowerShell example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" -Json -Number 5 -ShortName "production-vpc" "Deploy production VPC with public and private subnets"`
-   
+
    **IMPORTANT**:
    - Check all three sources (remote branches, local branches, specs directories) to find the highest number
    - Only match branches/directories with the exact short-name pattern
@@ -99,7 +99,7 @@ Given that infrastructure description, do this:
       **Purpose**: Validate specification completeness and quality before proceeding to planning
       **Created**: [DATE]
       **Infrastructure**: [Link to spec.md]
-      
+
       ## Content Quality
 
       - [ ] No implementation details (cloud providers, specific tools)
@@ -152,20 +152,20 @@ Given that infrastructure description, do this:
 
            ```markdown
            ## Question [N]: [Topic]
-           
+
            **Context**: [Quote relevant spec section]
-           
+
            **What we need to know**: [Specific question from NEEDS CLARIFICATION marker]
-           
+
            **Suggested Answers**:
-           
+
            | Option | Answer | Implications |
            |--------|--------|--------------|
            | A      | [First suggested answer] | [What this means for the infrastructure] |
            | B      | [Second suggested answer] | [What this means for the infrastructure] |
            | C      | [Third suggested answer] | [What this means for the infrastructure] |
            | Custom | Provide your own answer | [Explain how to provide custom input] |
-           
+
            **Your choice**: _[Wait for user response]_
            ```
 

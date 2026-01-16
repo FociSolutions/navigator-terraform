@@ -23,7 +23,7 @@ Follow-up TODOs: None
 Rationale for version 3.0.0 (MAJOR):
 - BREAKING: Removed two principles through consolidation (5 arch + 4 code → 4 arch + 3 code)
 - Fundamental restructuring - merged overlapping principles that address same outcomes
-- Backward incompatible - references to "Enforce Cloud Service Hierarchy" or "Design for Continuous Deployment" 
+- Backward incompatible - references to "Enforce Cloud Service Hierarchy" or "Design for Continuous Deployment"
   as distinct principles will no longer resolve
 - Migration guidance: Principle intent preserved but consolidated - no infrastructure changes needed
 -->
