@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": {
+    "terraform": {
+      "command": ["terraform", "fmt", "$FILE"],
+      "extensions": [".tf"]
+    }
+  },
+  "mcp": {
+    "microsoft-docs": {
+      "type": "remote",
+      "url": "https://learn.microsoft.com/api/mcp"
+    },
+  },
+  "instructions": [".github/instructions/terraform.instructions.md"],
+  "permission": {
+    "bash": "ask",
+  }
+}
