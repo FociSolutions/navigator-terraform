@@ -27,7 +27,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T002 Create terraform/env/dev/ and terraform/env/production/ directories
 - [X] T003 [P] Create terraform/azure/versions.tf with Terraform >= 1.9 and azurerm ~> 4.0 constraints
 - [X] T004 [P] Create terraform/azure/provider.tf with Azure provider configuration and features block
-- [X] T005 [P] Create terraform/azure/variables.tf with all configurable input variables (environment, region, SKUs, scaling, feature flags)
+- [X] T005 [P] Create terraform/azure/variables.tf with all configurable input variables (environment, region, SKUs, scaling, feature flags, enable_outbound_internet)
 - [X] T006 [P] Create terraform/azure/outputs.tf with key infrastructure outputs (Container Apps URL, PostgreSQL FQDN, Key Vault URI)
 - [X] T007 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", inputs for dev SKUs)
 - [X] T008 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (inputs for production SKUs, HA enabled)
@@ -49,7 +49,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T015 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
 - [X] T016 Create Application Gateway subnet (10.240.3.0/24) for future use in terraform/azure/vnet.tf
 - [X] T017 [P] Configure Service Endpoints (Microsoft.Storage, Microsoft.KeyVault) on subnets in terraform/azure/vnet.tf
-- [X] T018 Create terraform/azure/security.tf with Container Apps NSG (inbound 443, outbound 5432, 443)
+- [X] T018 Create terraform/azure/security.tf with Container Apps NSG (inbound 443 from internet with trivy:ignore, outbound split: Azure service tags + conditional internet with trivy:ignore, documentation comment block)
 - [X] T019 Create PostgreSQL NSG (inbound 5432 from Container Apps subnet only) in terraform/azure/security.tf
 - [X] T020 Associate NSGs with respective subnets in terraform/azure/security.tf
 - [X] T021 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
