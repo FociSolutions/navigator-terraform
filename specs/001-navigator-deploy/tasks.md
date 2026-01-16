@@ -33,7 +33,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T008 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (inputs for production SKUs, HA enabled)
 - [X] T009 [P] Create terraform/env/dev/Makefile with dev deployment shortcuts (init, plan, apply)
 - [X] T010 [P] Create terraform/env/production/Makefile with production deployment shortcuts
-- [X] T011 Run `cd terraform/env/production && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default`)
+- [X] T011 Run `cd terraform/env/production && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies)
 - [X] T012 Run `cd terraform/env/production && terragrunt validate` - setup checkpoint (requires T011 to complete first)
 
 ---
@@ -71,6 +71,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T026 [P] Create azurerm_key_vault_secret resources for database credentials placeholder in terraform/azure/keyvault.tf
 - [ ] T027 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
 - [ ] T028 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
+- [ ] T028b [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
 - [ ] T029 [P] Configure Key Vault private endpoint (conditional on var.enable_private_endpoints) in terraform/azure/keyvault.tf
 - [ ] T030 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server
 - [ ] T031 Configure PostgreSQL SKU (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
@@ -83,7 +84,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T038 Create terraform/azure/container-apps.tf with Azure Container Apps Environment
 - [ ] T039 Configure Container Apps Environment with VNet integration (Container Apps subnet) in terraform/azure/container-apps.tf
 - [ ] T040 Create Log Analytics Workspace for Container Apps logging in terraform/azure/container-apps.tf
-- [ ] T041 Create Navigator Container App resource (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
+- [ ] T041 Create Navigator Container App (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
 - [ ] T042 Configure container resources (0.25 vCPU/0.5GB for dev, 0.5 vCPU/1.0GB for production) in terraform/azure/container-apps.tf
 - [ ] T043 Configure scaling (min 0/max 2 for dev, min 1/max 10 for production) in terraform/azure/container-apps.tf
 - [ ] T044 Configure Container Apps ingress (HTTPS only, external, port 4000) in terraform/azure/container-apps.tf
@@ -101,6 +102,12 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
+
+**Post-Deployment Secret Population**: Tasks T026-T028 create placeholder secrets in Key Vault. Actual secret values must be populated manually or via CI/CD before application deployment:
+- PostgreSQL credentials: Generated during database creation, store in secrets management service
+- SECRET_KEY_BASE: Generate using `openssl rand -base64 64` (see spec.md Notes)
+- OpenAI/Azure OpenAI API key: Obtain from provider, store in secrets management service
+- Implement rotation policy per GC Patch Management Guidance (see principles.md Governance)
 
 ---
 
@@ -140,7 +147,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T075 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
 - [ ] T076 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
 - [ ] T077 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/`
-- [ ] T078 [P] Review Trivy findings and remediate HIGH/CRITICAL issues (exposed storage, missing encryption, overly permissive NSG rules)
+- [ ] T078 [P] Review Trivy findings and remediate or document HIGH/CRITICAL issues: fix configuration errors (missing encryption, exposed storage) or add trivy:ignore comments with business justification for intentional design (public HTTPS ingress, conditional outbound internet - see plan.md Security Compliance)
 - [ ] T079 [P] Add comprehensive resource tags (Environment, CostCenter=navigator, Project=valentine) to all resources in terraform/azure/*.tf
 - [ ] T080 [P] Update terraform/azure/outputs.tf with all key infrastructure values (Container Apps FQDN, PostgreSQL FQDN, Key Vault URI, DNS zone name)
 - [ ] T081 [P] Add output descriptions and sensitive markers where appropriate in terraform/azure/outputs.tf
@@ -332,16 +339,16 @@ When multiple team members work on IaC code:
 
 ## Task Summary
 
-**Total Tasks**: 93
+**Total Tasks**: 94
 
 **Task Count by Phase**:
 - Phase 1 (Setup): 12 tasks
 - Phase 2 (Network Tier): 11 tasks
-- Phase 3 (Compute & Data Tier): 33 tasks
+- Phase 3 (Compute & Data Tier): 34 tasks
 - Phase 4 (Application Tier): 17 tasks
 - Phase 5 (Polish): 20 tasks
 
-**Parallel Opportunities Identified**: 37 tasks marked [P] can run in parallel within their respective phases
+**Parallel Opportunities Identified**: 38 tasks marked [P] can run in parallel within their respective phases
 
 **Validation Checkpoints**: 7 checkpoints (Setup, Network, Compute/Data, Application, and 3 in Polish)
 

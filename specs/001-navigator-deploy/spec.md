@@ -30,10 +30,10 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ### Functional Requirements
 
 - **FR-001**: Infrastructure MUST provide container hosting to run the Navigator Phoenix application
-- **FR-002**: Infrastructure MUST provide managed relational database compatible with PostgreSQL 13+ (plan targets PostgreSQL 16.x as latest stable) with persistent storage
+- **FR-002**: Infrastructure MUST provide managed relational database compatible with PostgreSQL 13+ with persistent storage (implementation uses PostgreSQL 14.x to match AWS reference architecture)
 - **FR-003**: Infrastructure MUST support TLS/HTTPS for secure web access
 - **FR-004**: Infrastructure MUST provide secure storage for application secrets (database credentials, API keys, encryption keys)
-- **FR-005**: Infrastructure MUST support environment variable configuration for runtime settings (DATABASE_URL, SECRET_KEY_BASE, OPENAI_API_KEY - see Navigator app documentation)
+- **FR-005**: Infrastructure MUST support secure environment variable configuration for runtime settings (DATABASE_URL, SECRET_KEY_BASE, OPENAI_API_KEY) via secrets management service
 - **FR-006**: Infrastructure SHOULD support optional integration with OpenAI API or Azure OpenAI for AI features
 
 ### Non-Functional Requirements
@@ -62,7 +62,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 #### Scalability
 
 - Initial deployment: single application instance
-- Database sized for up to 10GB expected data volume (provisioned storage: 32GB dev, 128GB production per plan)
+- Database sized for up to 10GB expected data volume (provisioned storage: 32GB dev, 128GB production with auto-grow enabled per plan for automatic expansion beyond initial allocation)
 - Ability to manually scale application instances if needed (not auto-scaling required)
 
 ## Service Level Objectives (SLOs)
@@ -101,7 +101,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - [ ] Database not publicly accessible
 - [ ] Secrets stored in secure secret management service
 - [ ] Network security rules restrict access appropriately
-- [ ] No HIGH/CRITICAL findings in infrastructure security scans
+- [ ] All HIGH/CRITICAL findings in infrastructure security scans remediated or documented with business justification
 
 ### Functional Validation
 
@@ -117,6 +117,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - [ ] Basic monitoring/logging configured
 - [ ] Database backups configured and verified
 - [ ] Application logs accessible for troubleshooting
+- [ ] Database backup restoration tested (verify point-in-time restore capability within retention window)
 - [ ] Deployment documentation created
 
 ## Assumptions
@@ -127,7 +128,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - Manual deployment process acceptable (CI/CD can be added later)
 - Active development means occasional planned maintenance windows acceptable
 - AI features are optional and can be configured post-deployment
-- Authentication can start without IDP integration (can add Cognito/Google/Microsoft later)
+- Authentication can start without IDP integration (can add Azure AD B2C/Google/Microsoft later per plan)
 
 ## Out of Scope
 
@@ -162,7 +163,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ### Application Dependencies
 
 - Application container image built from navigator/valentine/Dockerfile
-- PostgreSQL 13+ compatible database service (PostgreSQL 16.x recommended per plan)
+- PostgreSQL 13+ compatible database service (PostgreSQL 14.x recommended to match AWS reference architecture)
 - Reference architecture: https://github.com/cds-snc/valentine-terraform/ (AWS-based implementation)
 
 ### Optional Dependencies
@@ -176,11 +177,13 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - An existing AWS-based reference architecture is available at https://github.com/cds-snc/valentine-terraform/ which can guide implementation decisions
 - The application is Elixir/Phoenix based, runs on port 4000, requires database migrations on startup
 - Application includes real-time features (WebSockets) which need persistent connections
-- The SECRET_KEY_BASE must be properly generated (not the example from docker-compose.yml)
+- The SECRET_KEY_BASE must be properly generated using cryptographically secure random generator (e.g., `openssl rand -base64 64`, not the example from docker-compose.yml) and stored in secrets management service
 - Application supports both OpenAI and Azure OpenAI for AI features
 - Application can run without authentication initially, but supports multiple IdP options
 - Target availability is > 85% (not a strict uptime SLO, suitable for pilot/dev environments)
 - **Prerequisites**: This specification assumes baseline organizational infrastructure (resource groups, projects) and IaC state management (remote backend, locking) are already in place
+- **DNS Configuration**: After infrastructure deployment, domain registrar NS records must be manually updated to point to cloud provider DNS name servers (output by infrastructure code after DNS zone creation)
+- **Post-Deployment Security**: Cloud provider security monitoring (e.g., Microsoft Defender for Cloud, AWS Security Hub, Google Security Command Center) recommended for production (manual configuration, not included in IaC scope)
 
 ---
 

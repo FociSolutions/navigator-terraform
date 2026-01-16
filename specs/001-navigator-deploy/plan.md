@@ -138,7 +138,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Health Probes: HTTP liveness probe on "/" endpoint (matches ALB health check pattern)
 - Ingress: HTTPS only (TLS 1.2+), external ingress for internet access
 - Session Affinity: Enable session affinity for WebSocket persistence (real-time collaboration requires sticky sessions)
-- Startup Command: Container runs default Phoenix startup sequence (database migrations on startup)
+- Startup Command: Container runs default Phoenix startup sequence (database migrations on startup; migration failures prevent container start, requiring rollback via Container Apps revision management)
 
 **Container Registry** (Optional, recommend for production)
 - Azure Container Registry (ACR): Basic SKU (dev), Standard SKU (production)
@@ -149,7 +149,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 ### Data Storage
 
 **Azure Database for PostgreSQL Flexible Server**
-- Engine Version: PostgreSQL 16.x (latest stable version as of January 2026, aligns with AWS Aurora PostgreSQL 14.15 equivalent)
+- Engine Version: PostgreSQL 14.x (aligns with AWS Aurora PostgreSQL 14.15 equivalent from reference architecture)
 - SKU Configuration:
   - Baseline (Dev): Burstable B1ms (1 vCore, 2 GB RAM, ~$12/month), 32 GB storage
   - Enhanced (Production): General Purpose D2s_v3 (2 vCores, 8 GB RAM), 128 GB storage with auto-grow enabled
@@ -197,7 +197,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Inbound: Allow HTTPS (443) from internet (public web application - unrestricted source is intentional and documented)
   - Outbound: Segregated by destination for least-privilege access:
     - Azure services: Allow 443 to AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
-    - Internet (conditional): Allow 443 to internet for OpenAI API integration (controlled by `enable_outbound_internet` variable, default: true)
+    - Internet (conditional): Allow 443 to internet for OpenAI API integration (controlled by `enable_outbound_internet` variable; default: true for dev/staging, configurable for production based on security policy)
     - PostgreSQL: Allow 5432 to PostgreSQL subnet (existing rule)
 - PostgreSQL NSG:
   - Inbound: Allow 5432 from Container Apps subnet only
@@ -502,6 +502,7 @@ terraform/
 │   ├── storage.tf                  # Storage Account (optional, for user uploads)
 │   ├── auth-b2c.tf                 # Azure AD B2C configuration (conditional)
 │   ├── auth-google.tf              # Google OAuth configuration (conditional)
+│   ├── auth-openai.tf              # Azure OpenAI Cognitive Services (conditional)
 │   ├── gh-oidc.tf                  # GitHub OIDC federated credentials
 │   └── templates/
 │       └── container-env.json      # Container Apps environment variables template
