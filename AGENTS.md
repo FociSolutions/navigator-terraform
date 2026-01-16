@@ -54,7 +54,7 @@ For Elixir/Phoenix code conventions, refer to @navigator/valentine/AGENTS.md
 
 - Never commit secrets, API keys, or credentials
 - Always mark sensitive Terraform variables as `sensitive = true`
-- Run security scans regularly: `tfsec`, `trivy`, or `checkov`
+- Always run `trivy config terraform/` and fix or justify the issue.
 - Keep Terraform providers and modules updated
 - Use Azure Key Vault for all secrets
 - Ensure database is not publicly accessible
