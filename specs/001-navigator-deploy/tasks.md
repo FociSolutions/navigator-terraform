@@ -44,17 +44,17 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **⚠️ CRITICAL**: Network tier MUST complete before compute resources can be provisioned
 
-- [ ] T013 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
-- [ ] T014 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
-- [ ] T015 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
-- [ ] T016 Create Application Gateway subnet (10.240.3.0/24) for future use in terraform/azure/vnet.tf
-- [ ] T017 [P] Configure Service Endpoints (Microsoft.Storage, Microsoft.KeyVault) on subnets in terraform/azure/vnet.tf
-- [ ] T018 Create terraform/azure/security.tf with Container Apps NSG (inbound 443, outbound 5432, 443)
-- [ ] T019 Create PostgreSQL NSG (inbound 5432 from Container Apps subnet only) in terraform/azure/security.tf
-- [ ] T020 Associate NSGs with respective subnets in terraform/azure/security.tf
-- [ ] T021 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
-- [ ] T022 [P] Create IAM access groups and initial RBAC role assignments skeleton in terraform/azure/identity.tf
-- [ ] T023 Run `cd terraform/env/production && terragrunt validate` - network tier checkpoint
+- [X] T013 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
+- [X] T014 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
+- [X] T015 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
+- [X] T016 Create Application Gateway subnet (10.240.3.0/24) for future use in terraform/azure/vnet.tf
+- [X] T017 [P] Configure Service Endpoints (Microsoft.Storage, Microsoft.KeyVault) on subnets in terraform/azure/vnet.tf
+- [X] T018 Create terraform/azure/security.tf with Container Apps NSG (inbound 443, outbound 5432, 443)
+- [X] T019 Create PostgreSQL NSG (inbound 5432 from Container Apps subnet only) in terraform/azure/security.tf
+- [X] T020 Associate NSGs with respective subnets in terraform/azure/security.tf
+- [X] T021 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
+- [X] T022 [P] Create IAM access groups and initial RBAC role assignments skeleton in terraform/azure/identity.tf
+- [X] T023 Run `cd terraform/env/production && terragrunt validate` - network tier checkpoint
 
 **Checkpoint**: Network tier complete - compute and data resources can now be provisioned
 
