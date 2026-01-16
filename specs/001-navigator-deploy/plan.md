@@ -54,11 +54,11 @@ Before implementing this plan, ensure the following baseline infrastructure exis
 
 ## Principles Check
 
-This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as follows:
+This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as follows:
 
 ### Cloud Architecture Principles
 
-**1. Favor Managed Services** ✅  
+**1. Prefer Managed Services** ✅ (consolidated from "Favor Managed Services" + "Enforce Cloud Service Hierarchy" in v3.0.0)  
 - Uses Azure Container Apps (fully managed serverless containers)
 - Uses Azure Database for PostgreSQL Flexible Server (managed database with automated backups, patching)
 - Uses Azure Key Vault (managed secrets service)
@@ -93,7 +93,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
   - Production deployment scenarios validating direct resource approach
 - Baseline environments use direct resources exclusively for maximum transparency and learning
 
-**2. Validate During Development** ✅  
+**2. Automate Validation and Deployment** ✅ (consolidated from "Validate During Development" + "Design for Continuous Deployment" in v3.0.0)  
 - terraform validate after each file modification
 - terraform plan at tier boundaries (network complete, compute complete)
 - Trivy for security scanning (exposed storage, missing encryption, overly permissive network rules)
@@ -211,7 +211,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v2.0.0) as foll
 
 **DNS and TLS**
 - DNS Hosting: Azure DNS zone for custom domain (navigator-dev.cdssandbox.xyz, valentine.cds-snc.ca)
-  - **Prerequisite**: DNS zones must exist before implementation or will be created in tasks
+  - **Implementation**: DNS zones created by Terraform (task T057) as part of infrastructure deployment
+  - Domain registrar NS records must point to Azure DNS name servers (manual post-deployment configuration step)
 - A Record: Points to Container Apps environment default domain or Application Gateway public IP
 - TLS Certificates:
   - Baseline (Dev): Container Apps Managed Certificates (free, automatic renewal)

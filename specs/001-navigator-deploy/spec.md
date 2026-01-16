@@ -140,14 +140,24 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - Content Delivery Network for static assets
 - Load balancing (single instance sufficient)
 - Creation of baseline organizational infrastructure (resource groups, projects, etc.)
-- Setup of IaC state management infrastructure (remote backend, state locking)
+- Setup of IaC state management infrastructure (remote backend, state locking) - **MUST exist as prerequisite** (see Dependencies section)
 
 ## Dependencies
 
-### Infrastructure Prerequisites
+### Infrastructure Prerequisites (Must Exist Before Implementation)
 
-- Baseline organizational infrastructure (e.g., resource group in Azure, project in Google Cloud, AWS account structure)
-- IaC state management infrastructure (remote backend storage for Terraform state, state locking mechanism)
+- **Baseline organizational infrastructure**:
+  - Azure: Resource groups (e.g., `navigator-dev-rg`, `navigator-prod-rg`)
+  - Google Cloud: Projects with appropriate IAM bindings
+  - AWS: Account structure with appropriate organizational units
+
+- **IaC state management infrastructure**:
+  - Remote backend storage for Terraform state (Azure Storage Account with container, AWS S3 bucket, or GCS bucket)
+  - State locking mechanism (Azure Blob Storage lease-based locking, DynamoDB table for AWS, or GCS native locking)
+  - RBAC permissions configured:
+    - CI/CD service principals: Storage Blob Data Contributor (Azure) or equivalent write access
+    - Developers: Storage Blob Data Reader (Azure) or equivalent read-only access
+    - Ops team: Storage Blob Data Contributor (Azure) or equivalent full access for emergency recovery
 
 ### Application Dependencies
 
