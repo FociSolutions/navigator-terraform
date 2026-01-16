@@ -39,7 +39,8 @@ Instructions:
 
 ### Terraform Style
 
-For Terraform code conventions, refer to @.github/instructions/terraform.instructions.md
+- For Terraform code conventions, refer to @.github/instructions/terraform.instructions.md
+- Always use the `terraform` mcp server when referring to provider or module documentations
 
 ### Elixir/Phoenix Style
 
@@ -54,9 +55,8 @@ For Elixir/Phoenix code conventions, refer to @navigator/valentine/AGENTS.md
 
 - Never commit secrets, API keys, or credentials
 - Always mark sensitive Terraform variables as `sensitive = true`
-- Always run `trivy config terraform/` and fix or justify the issue.
+- Always run `trivy config terraform/` to flag security issues
 - Keep Terraform providers and modules updated
 - Use Azure Key Vault for all secrets
 - Ensure database is not publicly accessible
 - Enforce HTTPS/TLS for all web traffic
-
