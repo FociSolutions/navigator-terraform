@@ -46,7 +46,7 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 
 #### Availability
 
-- Application availability target > 85% (dev environment; enhanced environments target 99.9%)
+- Application availability target > 85%
 - Acceptable downtime: Up to 1-hour planned maintenance windows weekly for dev environment
 - Single availability zone deployment acceptable for dev environment
 - Backup strategy with daily snapshots retained for 14 days
@@ -122,7 +122,8 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 
 ## Assumptions
 
-- Target environment is development/staging (not production scale initially)
+- Target environment is development/staging (production scale is optional)
+- The Azure subscription has sufficient quota and permissions to create required resources (container instances, managed PostgreSQL, load balancer, storage)
 - Up to 100 concurrent users maximum in initial deployment
 - Single geographic region deployment sufficient
 - Manual deployment process acceptable (CI/CD can be added later)
