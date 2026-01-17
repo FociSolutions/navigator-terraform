@@ -33,8 +33,8 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T008 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (inputs for production SKUs, HA enabled)
 - [X] T009 [P] Create terraform/env/dev/Makefile with dev deployment shortcuts (init, plan, apply)
 - [X] T010 [P] Create terraform/env/production/Makefile with production deployment shortcuts
-- [X] T011 Run `cd terraform/env/production && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies)
-- [X] T012 Run `cd terraform/env/production && terragrunt validate` - setup checkpoint (requires T011 to complete first)
+- [X] T011 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies)
+- [X] T012 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T011 to complete first)
 
 ---
 
@@ -54,7 +54,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T020 Associate NSGs with respective subnets in terraform/azure/security.tf
 - [X] T021 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
 - [X] T022 [P] Create IAM access groups and initial RBAC role assignments skeleton in terraform/azure/identity.tf
-- [X] T023 Run `cd terraform/env/production && terragrunt validate` - network tier checkpoint
+- [X] T023 Run `cd terraform/env/dev && terragrunt validate` - network tier checkpoint
 
 **Checkpoint**: Network tier complete - compute and data resources can now be provisioned
 
@@ -132,8 +132,8 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T069 Create terraform/azure/gh-oidc.tf with GitHub OIDC federated credentials for CI/CD
 - [ ] T070 Configure service principal with least-privilege RBAC (Contributor on Container App, read-only Key Vault) in terraform/azure/gh-oidc.tf
 - [ ] T071 [P] Configure NAT Gateway for outbound connectivity (conditional, production) in terraform/azure/vnet.tf
-- [ ] T072 Run `cd terraform/env/production && terragrunt validate` - application tier checkpoint
-- [ ] T073 Run `cd terraform/env/production && terragrunt plan` to preview application tier changes
+- [ ] T072 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
+- [ ] T073 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
 
 **Checkpoint**: Application tier complete - infrastructure ready for polish and final validation
 
