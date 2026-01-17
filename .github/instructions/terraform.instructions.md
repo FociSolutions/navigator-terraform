@@ -78,3 +78,71 @@ applyTo: '**/*.tf'
   - Use the `.tftest.hcl` extension for test files.
   - Write tests to cover both positive and negative scenarios.
   - Ensure tests are idempotent and can be run multiple times without side effects.
+
+## Naming Conventions
+
+Pattern: `{project}-{env}-{descriptor}-{type}[-{instance}]` where project=`nav`, env=`dev|stg|prod`
+
+### Resource Names by Category
+
+**Networking**
+```
+nav-dev-vnet                    # Virtual Network (vnet)
+nav-dev-ca-snet                 # Container Apps Subnet (snet)
+nav-dev-db-snet                 # Database Subnet (snet)
+nav-dev-ca-nsg                  # Container Apps NSG (nsg)
+nav-dev-db-nsg                  # Database NSG (nsg)
+nav-dev-natgw                   # NAT Gateway (natgw)
+nav-dev-natgw-pip               # NAT Gateway Public IP (pip)
+nav-dev-kv-pe                   # Key Vault Private Endpoint (pe)
+```
+
+**Compute & Apps**
+```
+nav-dev-cae                     # Container App Environment (cae)
+nav-dev-ca-001                  # Container App instance (ca)
+nav-dev-web-ca-001              # Web app (multiple instances: -001, -002)
+nav-dev-api-ca-001              # API app (descriptor: web, api, worker)
+```
+
+**Data & Storage** (globally scoped, include hash suffix)
+```
+nav-dev-psql                    # PostgreSQL Flexible Server (psql)
+nav-dev-kv-1a2b3c4d             # Key Vault (kv + 8-char hash)
+navdevst1a2b3c4d                # Storage Account (NO HYPHENS, st + 8-char hash)
+nav-dev-openai                  # Azure OpenAI (openai)
+```
+
+**Monitoring**
+```
+nav-dev-law                     # Log Analytics Workspace (law)
+nav-dev-appi                    # Application Insights (appi)
+```
+
+**Key Vault Secrets** (kebab-case)
+```
+db-conn-str, db-admin-pass, phoenix-key, openai-endpoint, openai-api-key
+```
+
+### Implementation
+
+Centralize naming in `locals.tf`:
+
+```hcl
+locals {
+  name_prefix       = "nav-${var.environment}"
+  uniqueness_suffix = substr(sha256("${var.resource_group_name}-${var.environment}"), 0, 8)
+
+  # Networking
+  vnet_name    = "${local.name_prefix}-vnet"
+  ca_snet_name = "${local.name_prefix}-ca-snet"
+  db_nsg_name  = "${local.name_prefix}-db-nsg"
+
+  # Globally scoped (with hash)
+  kv_name   = "${local.name_prefix}-kv-${local.uniqueness_suffix}"
+  st_name   = "nav${var.environment}st${local.uniqueness_suffix}"  # NO HYPHENS
+  psql_name = "${local.name_prefix}-psql"
+}
+```
+
+**Checklist**: `nav` prefix • env valid • descriptor clear • standard abbreviation • zero-padded instances • global resources have hash • storage no hyphens • within Azure length limits • tagged
