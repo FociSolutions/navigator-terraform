@@ -66,40 +66,40 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Dependencies**: Requires Network Tier (Phase 2) to be complete
 
-- [ ] T024 Create terraform/azure/keyvault.tf with Azure Key Vault (Standard SKU for dev, soft delete enabled)
-- [ ] T025 [P] Configure Key Vault RBAC access policy in terraform/azure/keyvault.tf
-- [ ] T026 [P] Create azurerm_key_vault_secret resources for database credentials placeholder in terraform/azure/keyvault.tf
-- [ ] T027 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
-- [ ] T028 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
-- [ ] T028b [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
-- [ ] T029 [P] Configure Key Vault private endpoint (conditional on var.enable_private_endpoints) in terraform/azure/keyvault.tf
-- [ ] T030 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server
-- [ ] T031 Configure PostgreSQL SKU (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
-- [ ] T032 Configure PostgreSQL storage (32GB dev, 128GB production, auto-grow enabled) in terraform/azure/postgresql.tf
-- [ ] T033 Configure PostgreSQL HA (disabled for dev, zone-redundant for production with var.postgres_ha_enabled) in terraform/azure/postgresql.tf
-- [ ] T034 Configure PostgreSQL backup (7-14 day retention based on var.backup_retention_days) in terraform/azure/postgresql.tf
-- [ ] T035 Configure PostgreSQL private endpoint in VNet (PostgreSQL subnet) in terraform/azure/postgresql.tf
-- [ ] T036 Configure PostgreSQL SSL/TLS enforcement (TLS 1.2+) in terraform/azure/postgresql.tf
-- [ ] T037 Store PostgreSQL connection string in Key Vault using azurerm_key_vault_secret in terraform/azure/postgresql.tf
-- [ ] T038 Create terraform/azure/container-apps.tf with Azure Container Apps Environment
-- [ ] T039 Configure Container Apps Environment with VNet integration (Container Apps subnet) in terraform/azure/container-apps.tf
-- [ ] T040 Create Log Analytics Workspace for Container Apps logging in terraform/azure/container-apps.tf
-- [ ] T041 Create Navigator Container App (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
-- [ ] T042 Configure container resources (0.25 vCPU/0.5GB for dev, 0.5 vCPU/1.0GB for production) in terraform/azure/container-apps.tf
-- [ ] T043 Configure scaling (min 0/max 2 for dev, min 1/max 10 for production) in terraform/azure/container-apps.tf
-- [ ] T044 Configure Container Apps ingress (HTTPS only, external, port 4000) in terraform/azure/container-apps.tf
-- [ ] T045 Configure health probes (HTTP liveness on "/" endpoint) in terraform/azure/container-apps.tf
-- [ ] T046 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
-- [ ] T047 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf
-- [ ] T048 Configure container environment variables with Key Vault secret references in terraform/azure/container-apps.tf
-- [ ] T049 [REMOVED] Not required - environment variables defined in HCL in T048, no external template needed
-- [ ] T050 [P] Create terraform/azure/storage.tf with Azure Storage Account (conditional on var.create_storage_account)
-- [ ] T051 [P] Configure Storage Account SKU (Standard LRS for dev, Standard ZRS for production) in terraform/azure/storage.tf
-- [ ] T052 [P] Create blob container for user uploads in terraform/azure/storage.tf
-- [ ] T053 [P] Configure storage lifecycle management (Move to Cool tier after 90 days, Archive tier after 180 days for long-term retention) in terraform/azure/storage.tf
-- [ ] T054 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
-- [ ] T055 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
-- [ ] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
+- [X] T024 Create terraform/azure/keyvault.tf with Azure Key Vault (Standard SKU for dev, soft delete enabled)
+- [X] T025 [P] Configure Key Vault RBAC access policy in terraform/azure/keyvault.tf
+- [X] T026 [P] Create azurerm_key_vault_secret resources for database credentials placeholder in terraform/azure/keyvault.tf
+- [X] T027 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
+- [X] T028 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
+- [X] T028b [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
+- [X] T029 [P] Configure Key Vault private endpoint (conditional on var.enable_private_endpoints) in terraform/azure/keyvault.tf
+- [X] T030 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server
+- [X] T031 Configure PostgreSQL SKU (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
+- [X] T032 Configure PostgreSQL storage (32GB dev, 128GB production, auto-grow enabled) in terraform/azure/postgresql.tf
+- [X] T033 Configure PostgreSQL HA (disabled for dev, zone-redundant for production with var.postgres_ha_enabled) in terraform/azure/postgresql.tf
+- [X] T034 Configure PostgreSQL backup (7-14 day retention based on var.backup_retention_days) in terraform/azure/postgresql.tf
+- [X] T035 Configure PostgreSQL private endpoint in VNet (PostgreSQL subnet) in terraform/azure/postgresql.tf
+- [X] T036 Configure PostgreSQL SSL/TLS enforcement (TLS 1.2+) in terraform/azure/postgresql.tf
+- [X] T037 Store PostgreSQL connection string in Key Vault using azurerm_key_vault_secret in terraform/azure/postgresql.tf
+- [X] T038 Create terraform/azure/container-apps.tf with Azure Container Apps Environment
+- [X] T039 Configure Container Apps Environment with VNet integration (Container Apps subnet) in terraform/azure/container-apps.tf
+- [X] T040 Create Log Analytics Workspace for Container Apps logging in terraform/azure/container-apps.tf
+- [X] T041 Create Navigator Container App (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
+- [X] T042 Configure container resources (0.25 vCPU/0.5GB for dev, 0.5 vCPU/1.0GB for production) in terraform/azure/container-apps.tf
+- [X] T043 Configure scaling (min 0/max 2 for dev, min 1/max 10 for production) in terraform/azure/container-apps.tf
+- [X] T044 Configure Container Apps ingress (HTTPS only, external, port 4000) in terraform/azure/container-apps.tf
+- [X] T045 Configure health probes (HTTP liveness on "/" endpoint) in terraform/azure/container-apps.tf
+- [X] T046 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
+- [X] T047 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf
+- [X] T048 Configure container environment variables with Key Vault secret references in terraform/azure/container-apps.tf
+- [X] T049 [REMOVED] Not required - environment variables defined in HCL in T048, no external template needed
+- [X] T050 [P] Create terraform/azure/storage.tf with Azure Storage Account (conditional on var.create_storage_account)
+- [X] T051 [P] Configure Storage Account SKU (Standard LRS for dev, Standard ZRS for production) in terraform/azure/storage.tf
+- [X] T052 [P] Create blob container for user uploads in terraform/azure/storage.tf
+- [X] T053 [P] Configure storage lifecycle management (Move to Cool tier after 90 days, Archive tier after 180 days for long-term retention) in terraform/azure/storage.tf
+- [X] T054 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
+- [X] T055 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
+- [X] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
 
