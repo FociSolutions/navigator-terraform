@@ -9,6 +9,12 @@
 
 This specification defines the minimal infrastructure requirements to deploy the Navigator threat modeling application. Navigator is an Elixir/Phoenix web application that provides real-time collaborative threat modeling with AI assistance. The infrastructure will support a small initial deployment suitable for dev/staging environments with capacity for 50-100 concurrent users.
 
+## Clarifications
+
+### Session 2026-01-17
+
+- Q: How should Azure OpenAI be deployed and managed? → A: Azure OpenAI service deployed in the same subscription/region as the app (managed within infrastructure code)
+
 ## Problem Statement
 
 ### Current State
@@ -30,11 +36,11 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ### Functional Requirements
 
 - **FR-001**: Infrastructure MUST provide container hosting to run the Navigator Phoenix application
-- **FR-002**: Infrastructure MUST provide managed relational database compatible with PostgreSQL 13+ with persistent storage (implementation uses PostgreSQL 14.x to match AWS reference architecture)
+- **FR-002**: Infrastructure MUST provide managed relational database compatible with PostgreSQL 13+ with persistent storage (PostgreSQL 14.x recommended to match AWS reference architecture)
 - **FR-003**: Infrastructure MUST support TLS/HTTPS for secure web access
 - **FR-004**: Infrastructure MUST provide secure storage for application secrets (database credentials, API keys, encryption keys)
-- **FR-005**: Infrastructure MUST support secure environment variable configuration for runtime settings (DATABASE_URL, SECRET_KEY_BASE, OPENAI_API_KEY) via secrets management service
-- **FR-006**: Infrastructure SHOULD support optional integration with OpenAI API or Azure OpenAI for AI features
+- **FR-005**: Infrastructure MUST support secure environment variable configuration for runtime settings (e.g. DATABASE_URL, SECRET_KEY_BASE) via secrets management service
+- **FR-006**: Infrastructure SHOULD provision optional Azure OpenAI service for AI features within the same subscription/region (no external OpenAI API support)
 
 ### Non-Functional Requirements
 
@@ -46,10 +52,10 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 
 #### Availability
 
-- Application availability target > 85%
+- Application availability target > 85% (not a strict uptime SLO; suitable for pilot/dev environments)
 - Acceptable downtime: Up to 1-hour planned maintenance windows weekly for dev environment
 - Single availability zone deployment acceptable for dev environment
-- Backup strategy with daily snapshots retained for 14 days
+- Backup strategy with daily automated snapshots retained for 14 days
 
 #### Security
 
@@ -68,16 +74,15 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ## Service Level Objectives (SLOs)
 
 - **Response Time**: 95th percentile page load time < 2 seconds
-- **Data Durability**: Zero data loss from database failures (automated backups with 14-day retention)
+- **Data Durability**: Zero data loss from database failures (automated backups support point-in-time restore within 14-day retention window)
 - **Recovery Time**: Application restoration within 4 hours of infrastructure failure
 
 ## Cost Constraints
 
 ### Budget
 
-- Monthly operating cost target: $50-150/month
-- Initial setup costs: Under $100 (includes Azure Container Registry Basic SKU ~$5/month, Azure DNS zone ~$0.50/month, managed TLS certificates at no cost)
-- Annual target: ~$1,000-1,800 for dev environment
+- Monthly operating cost target: $50-150/month (includes Azure Container Registry Basic SKU ~$5/month, Azure DNS zone ~$0.50/month, managed TLS certificates at no cost; note: Azure OpenAI costs vary based on token usage and assume moderate AI feature usage)
+- Annual target: ~$1,000-1,800 for dev environment (excluding variable Azure OpenAI consumption costs)
 
 ### Cost Optimization
 
@@ -110,7 +115,6 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - [ ] Application seeds loaded successfully
 - [ ] User can create workspace and perform basic threat modeling
 - [ ] Real-time collaboration features working (WebSocket connections)
-- [ ] Optional: AI features functional if API keys configured
 
 ### Operational Validation
 
@@ -123,13 +127,13 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ## Assumptions
 
 - Target environment is development/staging (production scale is optional)
-- The Azure subscription has sufficient quota and permissions to create required resources (container instances, managed PostgreSQL, load balancer, storage)
+- The Azure subscription has sufficient quota and permissions to create required resources (container instances, managed PostgreSQL, load balancer, storage, Azure OpenAI)
 - Up to 100 concurrent users maximum in initial deployment
 - Single geographic region deployment sufficient
 - Manual deployment process acceptable (CI/CD can be added later)
 - Active development means occasional planned maintenance windows acceptable
-- AI features are optional and can be configured post-deployment
-- Authentication can start without IDP integration (can add Azure AD B2C/Google/Microsoft later per plan)
+- Authentication can start without Identity Provider integration (can add Azure AD B2C/Google/Microsoft later per plan)
+- All infrastructure resources are self-contained within the project scope and do not rely on shared infrastructure (e.g., shared VNets, centralized Key Vaults, or cross-subscription dependencies)
 
 ## Out of Scope
 
@@ -138,7 +142,6 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 - Auto-scaling capabilities
 - Advanced monitoring/observability (basic Application Insights acceptable for production; APM and distributed tracing not required)
 - Custom domain name (can use platform-provided domain initially)
-- Identity Provider integration (optional for later)
 - Content Delivery Network for static assets
 - Load balancing (single instance sufficient)
 - Creation of baseline organizational infrastructure (resource groups, projects, etc.)
@@ -164,25 +167,19 @@ A deployed instance of Navigator accessible via the web, with proper database pe
 ### Application Dependencies
 
 - Application container image built from navigator/valentine/Dockerfile
-- PostgreSQL 13+ compatible database service (PostgreSQL 14.x recommended to match AWS reference architecture)
-- Reference architecture: https://github.com/cds-snc/valentine-terraform/ (AWS-based implementation)
+- PostgreSQL 13+ compatible database service
 
 ### Optional Dependencies
 
-- OpenAI API key or Azure OpenAI credentials for AI features
 - OAuth credentials for authentication providers (can be added later)
 
 ## Notes
 
 - This specification focuses on minimal viable infrastructure ("start small with only the required bits")
-- An existing AWS-based reference architecture is available at https://github.com/cds-snc/valentine-terraform/ which can guide implementation decisions
 - The application is Elixir/Phoenix based, runs on port 4000, requires database migrations on startup
 - Application includes real-time features (WebSockets) which need persistent connections
 - The SECRET_KEY_BASE must be properly generated using cryptographically secure random generator (e.g., `openssl rand -base64 64`, not the example from docker-compose.yml) and stored in secrets management service
-- Application supports both OpenAI and Azure OpenAI for AI features
-- Application can run without authentication initially, but supports multiple IdP options
-- Target availability is > 85% (not a strict uptime SLO, suitable for pilot/dev environments)
-- **Prerequisites**: This specification assumes baseline organizational infrastructure (resource groups, projects) and IaC state management (remote backend, locking) are already in place
+- **Self-Contained Architecture**: All infrastructure resources are deployed within the project scope without dependencies on shared organizational infrastructure (dedicated VNet, Key Vault, monitoring resources per deployment)
 - **DNS Configuration**: After infrastructure deployment, domain registrar NS records must be manually updated to point to cloud provider DNS name servers (output by infrastructure code after DNS zone creation)
 - **Post-Deployment Security**: Cloud provider security monitoring (e.g., Microsoft Defender for Cloud, AWS Security Hub, Google Security Command Center) recommended for production (manual configuration, not included in IaC scope)
 
