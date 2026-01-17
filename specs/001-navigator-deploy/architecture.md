@@ -446,7 +446,7 @@ resource "azurerm_subnet" "postgres" {
 | **Access Tier** | Hot | Hot |
 | **Blob Container** | `user-uploads` | `user-uploads` |
 | **Private Endpoint** | No | Yes (conditional) |
-| **Lifecycle Policy** | Archive to Cool after 90 days, delete after 365 days | Archive to Cool after 90 days, delete after 365 days |
+| **Lifecycle Policy** | Archive to Cool after 90 days, Archive tier after 180 days | Archive to Cool after 90 days, Archive tier after 180 days |
 
 ### Application Gateway + WAF (Optional)
 

@@ -92,11 +92,11 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [ ] T046 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
 - [ ] T047 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf
 - [ ] T048 Configure container environment variables with Key Vault secret references in terraform/azure/container-apps.tf
-- [ ] T049 Create terraform/azure/templates/container-env.json template for environment variable structure
+- [ ] T049 [REMOVED] Not required - environment variables defined in HCL in T048, no external template needed
 - [ ] T050 [P] Create terraform/azure/storage.tf with Azure Storage Account (conditional on var.create_storage_account)
 - [ ] T051 [P] Configure Storage Account SKU (Standard LRS for dev, Standard ZRS for production) in terraform/azure/storage.tf
 - [ ] T052 [P] Create blob container for user uploads in terraform/azure/storage.tf
-- [ ] T053 [P] Configure storage lifecycle management (Archive Cool after 90 days, delete after 365) in terraform/azure/storage.tf
+- [ ] T053 [P] Configure storage lifecycle management (Move to Cool tier after 90 days, Archive tier after 180 days for long-term retention) in terraform/azure/storage.tf
 - [ ] T054 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
 - [ ] T055 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
 - [ ] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
