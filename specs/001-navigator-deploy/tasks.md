@@ -68,7 +68,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 - [X] T024 Create terraform/azure/keyvault.tf with Azure Key Vault (Standard SKU for dev, soft delete enabled)
 - [X] T025 [P] Configure Key Vault RBAC access policy in terraform/azure/keyvault.tf
-- [X] T026 [P] Create azurerm_key_vault_secret resources for database credentials placeholder in terraform/azure/keyvault.tf
+- [X] T026 [P] Create azurerm_key_vault_secret resources for PostgreSQL admin password placeholder in terraform/azure/keyvault.tf (Note: Database connection string secret created in postgresql.tf to avoid duplication)
 - [X] T027 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
 - [X] T028 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
 - [X] T028b [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
