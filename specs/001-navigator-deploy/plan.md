@@ -339,11 +339,23 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 **Deployment Strategy**:
 1. Validate changes in dev environment first (terraform plan, apply, manual testing)
 2. Promote configuration to staging (production-like validation)
-3. Deploy to production (manual approval gate in GitHub Actions)
-4. Resource naming: Environment prefixes (nav-dev-*, nav-staging-*, nav-prod-*)
-5. GitHub Actions workflows:
-   - Dev/Staging: Auto-deploy on merge to main branch (oidc authentication)
-   - Production: Deploy only on release publication (manual trigger, require approval)
+3. Deploy to production (manual deployment with explicit approval)
+4. Resource naming: Environment prefixes (nav-dev-*, nav-staging-*, nav-prod-)
+
+**Manual Deployment Commands**:
+```bash
+# Development environment
+cd terraform/env/dev
+terragrunt plan    # Review changes before applying
+terragrunt apply   # Deploy infrastructure
+
+# Production environment
+cd terraform/env/production
+terragrunt plan    # Review production changes
+terragrunt apply   # Deploy to production (requires explicit approval)
+```
+
+**Note**: CI/CD automation (GitHub Actions) can be added later as an enhancement. Initial deployment uses manual terraform commands for simplicity and control.
 
 ### Complexity Level
 
@@ -503,22 +515,14 @@ terraform/
 │   ├── auth-b2c.tf                 # Azure AD B2C configuration (conditional)
 │   ├── auth-google.tf              # Google OAuth configuration (conditional)
 │   ├── auth-openai.tf              # Azure OpenAI Cognitive Services (conditional)
-│   ├── gh-oidc.tf                  # GitHub OIDC federated credentials
 │   └── templates/
 │       └── container-env.json      # Container Apps environment variables template
 │
 └── env/                            # Environment-specific configurations (Terragrunt)
     ├── dev/
-    │   ├── terragrunt.hcl          # Dev environment configuration
-    │   └── Makefile                # Dev deployment shortcuts
+    │   └── terragrunt.hcl          # Dev environment configuration
     └── production/
-        ├── terragrunt.hcl          # Production environment configuration
-        └── Makefile                # Production deployment shortcuts
-
-.github/workflows/
-├── terraform-plan.yml              # Terraform plan on pull requests
-├── terraform-apply-dev.yml         # Auto-deploy dev on merge to main
-└── terraform-apply-prod.yml        # Deploy production on release (manual approval)
+        └── terragrunt.hcl          # Production environment configuration
 
 .specify/                           # Project management (existing)
 ├── memory/
@@ -541,7 +545,7 @@ README.md                           # Root project documentation
 - Terragrunt orchestration (`terraform/env/{dev,production}/`) provides environment-specific configuration via `inputs` block
 - Service-per-file organization (vnet.tf, container-apps.tf, postgresql.tf) improves maintainability and navigation
 - Supports environment promotion via configuration (change Terragrunt inputs, not Terraform code)
-- GitHub Actions workflows automate deployment with environment-appropriate controls (auto-deploy dev, manual approval for production)
+- Manual deployment workflow provides explicit control and approval for infrastructure changes
 
 **File Organization**:
 - `versions.tf`: Terraform >= 1.9, azurerm ~> 4.0 version constraints
@@ -556,12 +560,14 @@ README.md                           # Root project documentation
 - `remote_state`: Auto-generate Azure Storage backend configuration
 - `dependencies`: Manage deployment order if needed (network before compute)
 
-**Deployment Workflow**:
+**Manual Deployment Workflow**:
 1. Developer changes shared module (`terraform/azure/*.tf`)
-2. Open pull request → GitHub Actions runs `terraform plan` for dev environment (show preview)
-3. Merge to main → Auto-deploy to dev environment (validate changes)
-4. Create release → Manual approval workflow deploys to production (controlled promotion)
+2. Test in dev environment: `cd terraform/env/dev && terragrunt plan && terragrunt apply`
+3. Validate changes work as expected in dev
+4. Deploy to production: `cd terraform/env/production && terragrunt plan && terragrunt apply`
 5. Terragrunt ensures consistent infrastructure pattern across environments
+
+**Note**: CI/CD automation can be added later as an enhancement (e.g., GitHub Actions for automated terraform plan on PRs, automated apply on merge).
 
 ## Complexity Tracking
 
@@ -578,7 +584,6 @@ README.md                           # Root project documentation
 - DNS configuration (Azure DNS zone)
 - Monitoring and logging (Application Insights, Log Analytics)
 - Authentication configuration (Azure AD B2C or Google OAuth)
-- GitHub OIDC integration for CI/CD
 - Optional: Azure Container Registry, Storage Account
 
 ### Out of Scope (Prerequisites)
@@ -586,6 +591,12 @@ README.md                           # Root project documentation
 - Terraform state storage infrastructure (Storage Accounts, containers)
 - RBAC permissions for state storage access
 - Azure subscription setup and billing configuration
+
+### Out of Scope (Future Enhancements)
+- CI/CD pipeline automation (manual deployment acceptable initially)
+- GitHub OIDC integration for automated deployments
+- Multi-region deployment or disaster recovery
+- Advanced monitoring/observability beyond Application Insights
 
 ### Deployment Prerequisites Checklist
 

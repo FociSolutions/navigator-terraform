@@ -31,10 +31,8 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T006 [P] Create terraform/azure/outputs.tf with key infrastructure outputs (Container Apps URL, PostgreSQL FQDN, Key Vault URI)
 - [X] T007 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", inputs for dev SKUs)
 - [X] T008 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (inputs for production SKUs, HA enabled)
-- [X] T009 [P] Create terraform/env/dev/Makefile with dev deployment shortcuts (init, plan, apply)
-- [X] T010 [P] Create terraform/env/production/Makefile with production deployment shortcuts
-- [X] T011 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies)
-- [X] T012 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T011 to complete first)
+- [X] T009 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies)
+- [X] T010 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T009 to complete first)
 
 ---
 
@@ -44,17 +42,17 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **⚠️ CRITICAL**: Network tier MUST complete before compute resources can be provisioned
 
-- [X] T013 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
-- [X] T014 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
-- [X] T015 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
-- [X] T016 Create Application Gateway subnet (10.240.3.0/24) for future use in terraform/azure/vnet.tf
-- [X] T017 [P] Configure Service Endpoints (Microsoft.Storage, Microsoft.KeyVault) on subnets in terraform/azure/vnet.tf
-- [X] T018 Create terraform/azure/security.tf with Container Apps NSG (inbound 443 from internet with trivy:ignore, outbound split: Azure service tags + conditional internet with trivy:ignore, documentation comment block)
-- [X] T019 Create PostgreSQL NSG (inbound 5432 from Container Apps subnet only) in terraform/azure/security.tf
-- [X] T020 Associate NSGs with respective subnets in terraform/azure/security.tf
-- [X] T021 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
-- [X] T022 [P] Create IAM access groups and initial RBAC role assignments skeleton in terraform/azure/identity.tf
-- [X] T023 Run `cd terraform/env/dev && terragrunt validate` - network tier checkpoint
+- [X] T011 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
+- [X] T012 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
+- [X] T013 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
+- [X] T014 Create Application Gateway subnet (10.240.3.0/24) for future use in terraform/azure/vnet.tf
+- [X] T015 [P] Configure Service Endpoints (Microsoft.Storage, Microsoft.KeyVault) on subnets in terraform/azure/vnet.tf
+- [X] T016 Create terraform/azure/security.tf with Container Apps NSG (inbound 443 from internet with trivy:ignore, outbound split: Azure service tags + conditional internet with trivy:ignore, documentation comment block)
+- [X] T017 Create PostgreSQL NSG (inbound 5432 from Container Apps subnet only) in terraform/azure/security.tf
+- [X] T018 Associate NSGs with respective subnets in terraform/azure/security.tf
+- [X] T019 [P] Create terraform/azure/identity.tf for Managed Identities configuration structure
+- [X] T020 [P] Create IAM access groups and initial RBAC role assignments skeleton in terraform/azure/identity.tf
+- [X] T021 Run `cd terraform/env/dev && terragrunt validate` - network tier checkpoint
 
 **Checkpoint**: Network tier complete - compute and data resources can now be provisioned
 
@@ -66,44 +64,43 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Dependencies**: Requires Network Tier (Phase 2) to be complete
 
-- [X] T024 Create terraform/azure/keyvault.tf with Azure Key Vault (Standard SKU for dev, soft delete enabled)
-- [X] T025 [P] Configure Key Vault RBAC access policy in terraform/azure/keyvault.tf
-- [X] T026 [P] Create azurerm_key_vault_secret resources for PostgreSQL admin password placeholder in terraform/azure/keyvault.tf (Note: Database connection string secret created in postgresql.tf to avoid duplication)
-- [X] T027 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
-- [X] T028 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
-- [X] T028b [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
-- [X] T029 [P] Configure Key Vault private endpoint (conditional on var.enable_private_endpoints) in terraform/azure/keyvault.tf
-- [X] T030 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server
-- [X] T031 Configure PostgreSQL SKU (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
-- [X] T032 Configure PostgreSQL storage (32GB dev, 128GB production, auto-grow enabled) in terraform/azure/postgresql.tf
-- [X] T033 Configure PostgreSQL HA (disabled for dev, zone-redundant for production with var.postgres_ha_enabled) in terraform/azure/postgresql.tf
-- [X] T034 Configure PostgreSQL backup (7-14 day retention based on var.backup_retention_days) in terraform/azure/postgresql.tf
-- [X] T035 Configure PostgreSQL private endpoint in VNet (PostgreSQL subnet) in terraform/azure/postgresql.tf
-- [X] T036 Configure PostgreSQL SSL/TLS enforcement (TLS 1.2+) in terraform/azure/postgresql.tf
-- [X] T037 Store PostgreSQL connection string in Key Vault using azurerm_key_vault_secret in terraform/azure/postgresql.tf
-- [X] T038 Create terraform/azure/container-apps.tf with Azure Container Apps Environment
-- [X] T039 Configure Container Apps Environment with VNet integration (Container Apps subnet) in terraform/azure/container-apps.tf
-- [X] T040 Create Log Analytics Workspace for Container Apps logging in terraform/azure/container-apps.tf
-- [X] T041 Create Navigator Container App (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
-- [X] T042 Configure container resources (0.25 vCPU/0.5GB for dev, 0.5 vCPU/1.0GB for production) in terraform/azure/container-apps.tf
-- [X] T043 Configure scaling (min 0/max 2 for dev, min 1/max 10 for production) in terraform/azure/container-apps.tf
-- [X] T044 Configure Container Apps ingress (HTTPS only, external, port 4000) in terraform/azure/container-apps.tf
-- [X] T045 Configure health probes (HTTP liveness on "/" endpoint) in terraform/azure/container-apps.tf
-- [X] T046 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
-- [X] T047 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf
-- [X] T048 Configure container environment variables with Key Vault secret references in terraform/azure/container-apps.tf
-- [X] T049 [REMOVED] Not required - environment variables defined in HCL in T048, no external template needed
-- [X] T050 [P] Create terraform/azure/storage.tf with Azure Storage Account (conditional on var.create_storage_account)
-- [X] T051 [P] Configure Storage Account SKU (Standard LRS for dev, Standard ZRS for production) in terraform/azure/storage.tf
-- [X] T052 [P] Create blob container for user uploads in terraform/azure/storage.tf
-- [X] T053 [P] Configure storage lifecycle management (Move to Cool tier after 90 days, Archive tier after 180 days for long-term retention) in terraform/azure/storage.tf
-- [X] T054 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
-- [X] T055 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
-- [X] T056 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
+- [X] T022 Create terraform/azure/keyvault.tf with Azure Key Vault (Standard SKU for dev, soft delete enabled)
+- [X] T023 [P] Configure Key Vault RBAC access policy in terraform/azure/keyvault.tf
+- [X] T024 [P] Create azurerm_key_vault_secret resources for PostgreSQL admin password placeholder in terraform/azure/keyvault.tf (Note: Database connection string secret created in postgresql.tf to avoid duplication)
+- [X] T025 [P] Create azurerm_key_vault_secret for Phoenix SECRET_KEY_BASE placeholder in terraform/azure/keyvault.tf
+- [X] T026 [P] Create azurerm_key_vault_secret for OpenAI/Azure OpenAI API key placeholder in terraform/azure/keyvault.tf
+- [X] T027 [P] Create azurerm_cognitive_account for Azure OpenAI (conditional on var.create_azure_openai) in terraform/azure/auth-openai.tf
+- [X] T028 [P] Configure Key Vault private endpoint (conditional on var.enable_private_endpoints) in terraform/azure/keyvault.tf
+- [X] T029 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server
+- [X] T030 Configure PostgreSQL SKU (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
+- [X] T031 Configure PostgreSQL storage (32GB dev, 128GB production, auto-grow enabled) in terraform/azure/postgresql.tf
+- [X] T032 Configure PostgreSQL HA (disabled for dev, zone-redundant for production with var.postgres_ha_enabled) in terraform/azure/postgresql.tf
+- [X] T033 Configure PostgreSQL backup (7-14 day retention based on var.backup_retention_days) in terraform/azure/postgresql.tf
+- [X] T034 Configure PostgreSQL private endpoint in VNet (PostgreSQL subnet) in terraform/azure/postgresql.tf
+- [X] T035 Configure PostgreSQL SSL/TLS enforcement (TLS 1.2+) in terraform/azure/postgresql.tf
+- [X] T036 Store PostgreSQL connection string in Key Vault using azurerm_key_vault_secret in terraform/azure/postgresql.tf
+- [X] T037 Create terraform/azure/container-apps.tf with Azure Container Apps Environment
+- [X] T038 Configure Container Apps Environment with VNet integration (Container Apps subnet) in terraform/azure/container-apps.tf
+- [X] T039 Create Log Analytics Workspace for Container Apps logging in terraform/azure/container-apps.tf
+- [X] T040 Create Navigator Container App (image: public.ecr.aws/cds-snc/valentine:latest) in terraform/azure/container-apps.tf
+- [X] T041 Configure container resources (0.25 vCPU/0.5GB for dev, 0.5 vCPU/1.0GB for production) in terraform/azure/container-apps.tf
+- [X] T042 Configure scaling (min 0/max 2 for dev, min 1/max 10 for production) in terraform/azure/container-apps.tf
+- [X] T043 Configure Container Apps ingress (HTTPS only, external, port 4000) in terraform/azure/container-apps.tf
+- [X] T044 Configure health probes (HTTP liveness on "/" endpoint) in terraform/azure/container-apps.tf
+- [X] T045 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
+- [X] T046 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf
+- [X] T047 Configure container environment variables with Key Vault secret references in terraform/azure/container-apps.tf
+- [X] T048 [P] Create terraform/azure/storage.tf with Azure Storage Account (conditional on var.create_storage_account)
+- [X] T049 [P] Configure Storage Account SKU (Standard LRS for dev, Standard ZRS for production) in terraform/azure/storage.tf
+- [X] T050 [P] Create blob container for user uploads in terraform/azure/storage.tf
+- [X] T051 [P] Configure storage lifecycle management (Move to Cool tier after 90 days, Archive tier after 180 days for long-term retention) in terraform/azure/storage.tf
+- [X] T052 [P] Configure storage private endpoint (conditional, production) in terraform/azure/storage.tf
+- [X] T053 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
+- [X] T054 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
 
-**Post-Deployment Secret Population**: Tasks T026-T028 create placeholder secrets in Key Vault. Actual secret values must be populated manually or via CI/CD before application deployment:
+**Post-Deployment Secret Population**: Tasks T024-T026 create placeholder secrets in Key Vault. Actual secret values must be populated manually or via CI/CD before application deployment:
 - PostgreSQL credentials: Generated during database creation, store in secrets management service
 - SECRET_KEY_BASE: Generate using `openssl rand -base64 64` (see spec.md Notes)
 - OpenAI/Azure OpenAI API key: Obtain from provider, store in secrets management service
@@ -117,23 +114,21 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Dependencies**: Requires Compute & Data Tier (Phase 3) to be complete
 
-- [ ] T057 Create terraform/azure/dns.tf with Azure DNS zone (navigator-dev.cdssandbox.xyz for dev, valentine.cds-snc.ca for production)
-- [ ] T058 Create A record pointing to Container Apps environment default domain in terraform/azure/dns.tf
-- [ ] T059 Configure Container Apps Managed Certificate for custom domain (baseline) in terraform/azure/dns.tf
-- [ ] T060 Configure DNS validation for certificate issuance in terraform/azure/dns.tf
-- [ ] T061 [P] Create terraform/azure/monitoring.tf with Application Insights (conditional on var.enable_application_insights)
-- [ ] T062 [P] Configure Application Insights connection to Container Apps in terraform/azure/monitoring.tf
-- [ ] T063 [P] Create monitoring dashboards for key metrics (CPU, memory, request count) in terraform/azure/monitoring.tf
-- [ ] T064 [P] Create terraform/azure/alerts.tf with alerting policies (high CPU, database connection failures)
-- [ ] T065 [P] Configure alert notification channels (email, webhook) in terraform/azure/alerts.tf
-- [ ] T066 [P] Create terraform/azure/auth-b2c.tf for Azure AD B2C configuration (conditional on var.create_azure_ad_b2c)
-- [ ] T067 [P] Create terraform/azure/auth-google.tf for Google OAuth configuration (conditional on var.create_google_auth)
-- [ ] T068 [P] Store OAuth credentials in Key Vault using azurerm_key_vault_secret in terraform/azure/auth-google.tf
-- [ ] T069 Create terraform/azure/gh-oidc.tf with GitHub OIDC federated credentials for CI/CD
-- [ ] T070 Configure service principal with least-privilege RBAC (Contributor on Container App, read-only Key Vault) in terraform/azure/gh-oidc.tf
-- [ ] T071 [P] Configure NAT Gateway for outbound connectivity (conditional, production) in terraform/azure/vnet.tf
-- [ ] T072 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
-- [ ] T073 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
+- [ ] T055 Create terraform/azure/dns.tf with Azure DNS zone (navigator-dev.cdssandbox.xyz for dev, valentine.cds-snc.ca for production)
+- [ ] T056 Create A record pointing to Container Apps environment default domain in terraform/azure/dns.tf
+- [ ] T057 Configure Container Apps Managed Certificate for custom domain (baseline) in terraform/azure/dns.tf
+- [ ] T058 Configure DNS validation for certificate issuance in terraform/azure/dns.tf
+- [ ] T059 [P] Create terraform/azure/monitoring.tf with Application Insights (conditional on var.enable_application_insights)
+- [ ] T060 [P] Configure Application Insights connection to Container Apps in terraform/azure/monitoring.tf
+- [ ] T061 [P] Create monitoring dashboards for key metrics (CPU, memory, request count) in terraform/azure/monitoring.tf
+- [ ] T062 [P] Create terraform/azure/alerts.tf with alerting policies (high CPU, database connection failures)
+- [ ] T063 [P] Configure alert notification channels (email, webhook) in terraform/azure/alerts.tf
+- [ ] T064 [P] Create terraform/azure/auth-b2c.tf for Azure AD B2C configuration (conditional on var.create_azure_ad_b2c)
+- [ ] T065 [P] Create terraform/azure/auth-google.tf for Google OAuth configuration (conditional on var.create_google_auth)
+- [ ] T066 [P] Store OAuth credentials in Key Vault using azurerm_key_vault_secret in terraform/azure/auth-google.tf
+- [ ] T067 [P] Configure NAT Gateway for outbound connectivity (conditional, production) in terraform/azure/vnet.tf
+- [ ] T068 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
+- [ ] T069 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
 
 **Checkpoint**: Application tier complete - infrastructure ready for polish and final validation
 
@@ -143,26 +138,23 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Purpose**: Final validation, formatting, documentation, security scanning, and deployment readiness
 
-- [ ] T074 Run `terraform fmt -recursive` in terraform/azure/ to format all .tf files
-- [ ] T075 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
-- [ ] T076 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
-- [ ] T077 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/`
-- [ ] T078 [P] Review Trivy findings and remediate or document HIGH/CRITICAL issues: fix configuration errors (missing encryption, exposed storage) or add trivy:ignore comments with business justification for intentional design (public HTTPS ingress, conditional outbound internet - see plan.md Security Compliance)
-- [ ] T079 [P] Add comprehensive resource tags (Environment, CostCenter=navigator, Project=valentine) to all resources in terraform/azure/*.tf
-- [ ] T080 [P] Update terraform/azure/outputs.tf with all key infrastructure values (Container Apps FQDN, PostgreSQL FQDN, Key Vault URI, DNS zone name)
-- [ ] T081 [P] Add output descriptions and sensitive markers where appropriate in terraform/azure/outputs.tf
-- [ ] T082 Create terraform/azure/README.md with module documentation (variables, outputs, usage examples)
-- [ ] T083 Create terraform/env/dev/README.md with dev environment deployment instructions
-- [ ] T084 Create terraform/env/production/README.md with production deployment guide and approval requirements
-- [ ] T085 [P] Create .gitignore entries for Terraform state, .tfvars, .terraform/, terragrunt cache
-- [ ] T086 [P] Document prerequisite infrastructure requirements (resource groups, state storage) in root README.md
-- [ ] T087 Run `cd terraform/env/dev && terragrunt plan -out=dev.tfplan` to generate final dev plan
-- [ ] T088 Verify dev plan shows expected resources (VNet, Container Apps, PostgreSQL, Key Vault, DNS)
-- [ ] T089 [P] Create .github/workflows/terraform-plan.yml for PR plan automation
-- [ ] T090 [P] Create .github/workflows/terraform-apply-dev.yml for auto-deploy dev on merge
-- [ ] T091 [P] Create .github/workflows/terraform-apply-prod.yml for manual production deployment
-- [ ] T092 Document deployment strategy (dev → validate → production) in root README.md
-- [ ] T093 Final validation: Run `cd terraform/env/production && terragrunt validate` and confirm no errors
+- [ ] T070 Run `terraform fmt -recursive` in terraform/azure/ to format all .tf files
+- [ ] T071 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
+- [ ] T072 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
+- [ ] T073 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/`
+- [ ] T074 [P] Review Trivy findings and remediate or document HIGH/CRITICAL issues: fix configuration errors (missing encryption, exposed storage) or add trivy:ignore comments with business justification for intentional design (public HTTPS ingress, conditional outbound internet - see plan.md Security Compliance)
+- [ ] T075 [P] Add comprehensive resource tags (Environment, CostCenter=navigator, Project=valentine) to all resources in terraform/azure/*.tf
+- [ ] T076 [P] Update terraform/azure/outputs.tf with all key infrastructure values (Container Apps FQDN, PostgreSQL FQDN, Key Vault URI, DNS zone name)
+- [ ] T077 [P] Add output descriptions and sensitive markers where appropriate in terraform/azure/outputs.tf
+- [ ] T078 Create terraform/azure/README.md with module documentation (variables, outputs, usage examples)
+- [ ] T079 Create terraform/env/dev/README.md with dev environment deployment instructions
+- [ ] T080 Create terraform/env/production/README.md with production deployment guide and approval requirements
+- [ ] T081 [P] Create .gitignore entries for Terraform state, .tfvars, .terraform/, terragrunt cache
+- [ ] T082 [P] Document prerequisite infrastructure requirements (resource groups, state storage) in root README.md
+- [ ] T083 Run `cd terraform/env/dev && terragrunt plan -out=dev.tfplan` to generate final dev plan
+- [ ] T084 Verify dev plan shows expected resources (VNet, Container Apps, PostgreSQL, Key Vault, DNS)
+- [ ] T085 Document manual deployment strategy (dev → validate → production) in root README.md
+- [ ] T086 Final validation: Run `cd terraform/env/production && terragrunt validate` and confirm no errors
 
 ---
 
@@ -198,7 +190,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - Network tier: Subnets, NSGs, Service Endpoints (different resources, different files)
 - Compute tier: Key Vault secrets, Storage Account (independent resources)
 - Application tier: Monitoring, DNS, Authentication configs (different files, no dependencies)
-- Polish phase: Documentation tasks, security scanning, GitHub Actions workflows
+- Polish phase: Documentation tasks, security scanning
 
 **Across Environments:**
 - Dev and production environments can be validated in parallel during Polish phase
@@ -259,7 +251,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 3. **VALIDATE**: Run `terragrunt validate` to verify configuration syntax
 4. Complete Phase 3: Compute & Data Tier (create container-apps.tf, postgresql.tf, keyvault.tf, storage.tf)
 5. **VALIDATE**: Run `terragrunt validate` after compute tier
-6. Complete Phase 4: Application Tier (create dns.tf, monitoring.tf, auth-*.tf, gh-oidc.tf)
+6. Complete Phase 4: Application Tier (create dns.tf, monitoring.tf, auth-*.tf)
 7. **VALIDATE**: Run `terragrunt validate` after application tier
 8. Complete Phase 5: Polish (formatting, documentation, security scanning, final validation)
 9. Final validation with `terragrunt validate` and `terragrunt plan`
@@ -310,15 +302,29 @@ When multiple team members work on IaC code:
 - `create_google_auth = true`
 - `create_azure_ad_b2c = false`
 
-### Deployment Workflow
+### Manual Deployment Workflow
 
-1. Validate changes in dev environment first (`terragrunt plan`, apply, manual testing)
-2. Promote configuration to production (review Terragrunt inputs, adjust SKUs/HA settings)
-3. Deploy to production (manual approval gate in GitHub Actions)
-4. Resource naming convention: Environment prefixes (`nav-dev-*`, `nav-prod-*`)
-5. GitHub Actions workflows:
-   - Dev: Auto-deploy on merge to main branch (OIDC authentication)
-   - Production: Deploy only on release publication (manual trigger, require approval)
+1. **Validate changes in dev environment first**:
+   ```bash
+   cd terraform/env/dev
+   terragrunt plan    # Review changes before applying
+   terragrunt apply   # Deploy infrastructure
+   ```
+
+2. **Manual testing and validation**: Test deployed infrastructure in dev environment
+
+3. **Promote configuration to production**:
+   - Review Terragrunt inputs in `terraform/env/production/terragrunt.hcl`
+   - Adjust SKUs, HA settings, feature flags as needed
+
+4. **Deploy to production** (manual deployment with explicit approval):
+   ```bash
+   cd terraform/env/production
+   terragrunt plan    # Review production changes
+   terragrunt apply   # Deploy to production (requires explicit approval)
+   ```
+
+5. **Resource naming convention**: Environment prefixes (`nav-dev-*`, `nav-prod-*`)
 
 ---
 
@@ -339,19 +345,19 @@ When multiple team members work on IaC code:
 
 ## Task Summary
 
-**Total Tasks**: 94
+**Total Tasks**: 86
 
 **Task Count by Phase**:
-- Phase 1 (Setup): 12 tasks
+- Phase 1 (Setup): 10 tasks
 - Phase 2 (Network Tier): 11 tasks
-- Phase 3 (Compute & Data Tier): 34 tasks
-- Phase 4 (Application Tier): 17 tasks
-- Phase 5 (Polish): 20 tasks
+- Phase 3 (Compute & Data Tier): 32 tasks
+- Phase 4 (Application Tier): 15 tasks
+- Phase 5 (Polish): 18 tasks
 
-**Parallel Opportunities Identified**: 38 tasks marked [P] can run in parallel within their respective phases
+**Parallel Opportunities Identified**: 36 tasks marked [P] can run in parallel within their respective phases
 
 **Validation Checkpoints**: 7 checkpoints (Setup, Network, Compute/Data, Application, and 3 in Polish)
 
-**Environment Order**: dev → production (configuration-driven promotion via Terragrunt)
+**Environment Order**: dev → production (manual deployment via terragrunt commands)
 
 **Format Validation**: ✅ All tasks follow checklist format (checkbox, ID, labels, file paths)
