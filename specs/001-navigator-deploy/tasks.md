@@ -23,17 +23,17 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Purpose**: Terragrunt and Terraform project initialization, directory structure, version constraints
 
-- [ ] T001 Create terraform/ directory structure with azure/ and env/ subdirectories
-- [ ] T002 Create terraform/env/dev/ and terraform/env/production/ directories
-- [ ] T003 Create terraform/azure/templates/ directory for Container Apps environment variable templates
-- [ ] T004 [P] Create terraform/azure/versions.tf with Terraform >= 1.9 and azurerm ~> 4.0 constraints
-- [ ] T005 [P] Create terraform/azure/provider.tf with Azure provider configuration and features block
-- [ ] T006 [P] Create terraform/azure/variables.tf with all configurable input variables including use_key_vault (bool, default: false), enable_application_insights (bool), enable_auto_shutdown (bool), enable_zone_redundancy (bool), enable_outbound_internet (bool, default: true), create_google_auth (bool), create_azure_ad_b2c (bool), create_azure_openai (bool), create_storage_account (bool), plus environment, location, container CPU/memory, min/max replicas, postgres_sku, postgres_storage_gb, postgres_ha_enabled, backup_retention_days, domain_name
-- [ ] T007 [P] Create terraform/azure/outputs.tf with key infrastructure outputs (Container Apps URL, PostgreSQL FQDN, conditional Key Vault URI only when use_key_vault=true, DNS zone name servers)
-- [ ] T008 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", remote_state config for navtfstatedev, inputs block with: use_key_vault=false, container_cpu=0.25, container_memory=0.5Gi, min_replicas=0, max_replicas=2, postgres_sku=B_Standard_B1ms, postgres_storage_gb=32, postgres_ha_enabled=false, backup_retention_days=7, enable_application_insights=false, enable_auto_shutdown=true, enable_zone_redundancy=false, domain_name=navigator-dev.cdssandbox.xyz, enable_outbound_internet=true, create_google_auth=false, create_azure_ad_b2c=true, create_azure_openai=false)
-- [ ] T009 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (source = "../..//azure", remote_state config for navtfstateprod, inputs block with: use_key_vault=false, container_cpu=0.5, container_memory=1.0Gi, min_replicas=1, max_replicas=10, postgres_sku=GP_Standard_D2s_v3, postgres_storage_gb=128, postgres_ha_enabled=true, backup_retention_days=14, enable_application_insights=true, enable_auto_shutdown=false, enable_zone_redundancy=true, domain_name=valentine.cds-snc.ca, enable_outbound_internet=true, create_google_auth=true, create_azure_ad_b2c=false, create_azure_openai=false)
-- [ ] T010 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies section)
-- [ ] T011 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T010 to complete first)
+- [X] T001 Create terraform/ directory structure with azure/ and env/ subdirectories
+- [X] T002 Create terraform/env/dev/ and terraform/env/production/ directories
+- [X] T003 Create terraform/azure/templates/ directory for Container Apps environment variable templates
+- [X] T004 [P] Create terraform/azure/versions.tf with Terraform >= 1.9 and azurerm ~> 4.0 constraints
+- [X] T005 [P] Create terraform/azure/provider.tf with Azure provider configuration and features block
+- [X] T006 [P] Create terraform/azure/variables.tf with all configurable input variables including use_key_vault (bool, default: false), enable_application_insights (bool), enable_auto_shutdown (bool), enable_zone_redundancy (bool), enable_outbound_internet (bool, default: true), create_google_auth (bool), create_azure_ad_b2c (bool), create_azure_openai (bool), create_storage_account (bool), plus environment, location, container CPU/memory, min/max replicas, postgres_sku, postgres_storage_gb, postgres_ha_enabled, backup_retention_days, domain_name
+- [X] T007 [P] Create terraform/azure/outputs.tf with key infrastructure outputs (Container Apps URL, PostgreSQL FQDN, conditional Key Vault URI only when use_key_vault=true, DNS zone name servers)
+- [X] T008 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", remote_state config for navtfstatedev, inputs block with: use_key_vault=false, container_cpu=0.25, container_memory=0.5Gi, min_replicas=0, max_replicas=2, postgres_sku=B_Standard_B1ms, postgres_storage_gb=32, postgres_ha_enabled=false, backup_retention_days=7, enable_application_insights=false, enable_auto_shutdown=true, enable_zone_redundancy=false, domain_name=navigator-dev.cdssandbox.xyz, enable_outbound_internet=true, create_google_auth=false, create_azure_ad_b2c=true, create_azure_openai=false)
+- [X] T009 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (source = "../..//azure", remote_state config for navtfstateprod, inputs block with: use_key_vault=false, container_cpu=0.5, container_memory=1.0Gi, min_replicas=1, max_replicas=10, postgres_sku=GP_Standard_D2s_v3, postgres_storage_gb=128, postgres_ha_enabled=true, backup_retention_days=14, enable_application_insights=true, enable_auto_shutdown=false, enable_zone_redundancy=true, domain_name=valentine.cds-snc.ca, enable_outbound_internet=true, create_google_auth=true, create_azure_ad_b2c=false, create_azure_openai=false)
+- [X] T010 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies section)
+- [X] T011 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T010 to complete first)
 
 ---
 
@@ -43,18 +43,18 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **⚠️ CRITICAL**: Network tier MUST complete before compute resources can be provisioned
 
-- [ ] T012 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
-- [ ] T013 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
-- [ ] T014 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
-- [ ] T015 Create Application Gateway subnet (10.240.3.0/24) reserved for future use in terraform/azure/vnet.tf
-- [ ] T016 [P] Configure Service Endpoints (Microsoft.Storage for Storage Account, Microsoft.KeyVault conditional on var.use_key_vault) on Container Apps and PostgreSQL subnets in terraform/azure/vnet.tf
-- [ ] T017 [P] Create terraform/azure/dns-private.tf with private DNS zone for PostgreSQL (privatelink.postgres.database.azure.com)
-- [ ] T018 [P] Create VNet link for PostgreSQL private DNS zone in terraform/azure/dns-private.tf
-- [ ] T019 Create terraform/azure/security.tf with Container Apps NSG including inbound rule (allow 443 from internet with #trivy:ignore:AVD-AZU-0047 and documentation comment explaining public web application requirement), and segregated outbound rules: (1) Azure services 443 to service tags AzureKeyVault (conditional - only if var.use_key_vault=true using dynamic block), CognitiveServices, AzureMonitor, AzureContainerRegistry, (2) PostgreSQL 5432 to 10.240.2.0/24, (3) Internet 443 (conditional on var.enable_outbound_internet using dynamic block with #trivy:ignore:AVD-AZU-0051 and documentation comment)
-- [ ] T020 Create PostgreSQL NSG (inbound 5432 from 10.240.1.0/24 only, outbound deny all) in terraform/azure/security.tf
-- [ ] T021 Associate NSGs with respective subnets using azurerm_subnet_network_security_group_association in terraform/azure/security.tf
-- [ ] T022 [P] Create terraform/azure/identity.tf for Managed Identities and RBAC role assignments structure
-- [ ] T023 Run `cd terraform/env/dev && terragrunt validate` - network tier checkpoint
+- [X] T012 Create terraform/azure/vnet.tf with Virtual Network (10.240.0.0/16, Canada Central)
+- [X] T013 Create Container Apps subnet (10.240.1.0/24) delegated to Microsoft.App/environments in terraform/azure/vnet.tf
+- [X] T014 Create PostgreSQL subnet (10.240.2.0/24) delegated to Microsoft.DBforPostgreSQL/flexibleServers in terraform/azure/vnet.tf
+- [X] T015 Create Application Gateway subnet (10.240.3.0/24) reserved for future use in terraform/azure/vnet.tf
+- [X] T016 [P] Configure Service Endpoints (Microsoft.Storage for Storage Account, Microsoft.KeyVault conditional on var.use_key_vault) on Container Apps and PostgreSQL subnets in terraform/azure/vnet.tf
+- [X] T017 [P] Create terraform/azure/dns-private.tf with private DNS zone for PostgreSQL (privatelink.postgres.database.azure.com)
+- [X] T018 [P] Create VNet link for PostgreSQL private DNS zone in terraform/azure/dns-private.tf
+- [X] T019 Create terraform/azure/security.tf with Container Apps NSG including inbound rule (allow 443 from internet with #trivy:ignore:AVD-AZU-0047 and documentation comment explaining public web application requirement), and segregated outbound rules: (1) Azure services 443 to service tags AzureKeyVault (conditional - only if var.use_key_vault=true using dynamic block), CognitiveServices, AzureMonitor, AzureContainerRegistry, (2) PostgreSQL 5432 to 10.240.2.0/24, (3) Internet 443 (conditional on var.enable_outbound_internet using dynamic block with #trivy:ignore:AVD-AZU-0051 and documentation comment)
+- [X] T020 Create PostgreSQL NSG (inbound 5432 from 10.240.1.0/24 only, outbound deny all) in terraform/azure/security.tf
+- [X] T021 Associate NSGs with respective subnets using azurerm_subnet_network_security_group_association in terraform/azure/security.tf
+- [X] T022 [P] Create terraform/azure/identity.tf for Managed Identities and RBAC role assignments structure
+- [X] T023 Run `cd terraform/env/dev && terragrunt validate` - network tier checkpoint
 
 **Checkpoint**: Network tier complete - compute and data resources can now be provisioned
 
@@ -68,49 +68,49 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 ### Secrets & Key Vault (Conditional)
 
-- [ ] T024 Create terraform/azure/secrets.tf with random_password resource for PostgreSQL admin password (length=32, special=true, override_special="!#$%&*()-_=+[]{}<>:?")
-- [ ] T025 [P] Create random_password resource for Phoenix SECRET_KEY_BASE (length=64, special=false) in terraform/azure/secrets.tf
-- [ ] T026 [P] Create terraform/azure/keyvault.tf with conditional Azure Key Vault (count = var.use_key_vault ? 1 : 0, SKU: standard for dev/premium for production based on var.environment, soft_delete_retention_days=90, purge_protection_enabled conditional on environment, enable_rbac_authorization=true, network_acls with default_action conditional on environment)
-- [ ] T027 [P] Configure conditional Key Vault RBAC role assignment for Terraform deployment identity (Key Vault Secrets Officer role, conditional on var.use_key_vault) in terraform/azure/identity.tf
-- [ ] T028 [P] Create conditional azurerm_key_vault_secret resources in terraform/azure/keyvault.tf (count = var.use_key_vault ? 1 : 0): postgres-admin-password (from random_password), phoenix-secret-key-base (from random_password), with depends_on for RBAC role assignment
-- [ ] T029 [P] Create conditional Key Vault private endpoint in terraform/azure/keyvault.tf (count = var.use_key_vault && var.environment == "production" ? 1 : 0)
-- [ ] T030 [P] Create conditional private DNS zone for Key Vault (privatelink.vaultcore.azure.net) in terraform/azure/dns-private.tf (count = var.use_key_vault && var.environment == "production" ? 1 : 0)
+- [X] T024 Create terraform/azure/secrets.tf with random_password resource for PostgreSQL admin password (length=32, special=true, override_special="!#$%&*()-_=+[]{}<>:?")
+- [X] T025 [P] Create random_password resource for Phoenix SECRET_KEY_BASE (length=64, special=false) in terraform/azure/secrets.tf
+- [X] T026 [P] Create terraform/azure/keyvault.tf with conditional Azure Key Vault (count = var.use_key_vault ? 1 : 0, SKU: standard for dev/premium for production based on var.environment, soft_delete_retention_days=90, purge_protection_enabled conditional on environment, enable_rbac_authorization=true, network_acls with default_action conditional on environment)
+- [X] T027 [P] Configure conditional Key Vault RBAC role assignment for Terraform deployment identity (Key Vault Secrets Officer role, conditional on var.use_key_vault) in terraform/azure/identity.tf
+- [X] T028 [P] Create conditional azurerm_key_vault_secret resources in terraform/azure/keyvault.tf (count = var.use_key_vault ? 1 : 0): postgres-admin-password (from random_password), phoenix-secret-key-base (from random_password), with depends_on for RBAC role assignment
+- [X] T029 [P] Create conditional Key Vault private endpoint in terraform/azure/keyvault.tf (count = var.use_key_vault && var.environment == "production" ? 1 : 0)
+- [X] T030 [P] Create conditional private DNS zone for Key Vault (privatelink.vaultcore.azure.net) in terraform/azure/dns-private.tf (count = var.use_key_vault && var.environment == "production" ? 1 : 0)
 
 ### PostgreSQL Database
 
-- [ ] T031 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server (version=14, delegated_subnet_id, private_dns_zone_id, administrator_login=navadmin, administrator_password from random_password resource)
-- [ ] T032 Configure PostgreSQL SKU based on var.postgres_sku (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
-- [ ] T033 Configure PostgreSQL storage (var.postgres_storage_gb * 1024 MB, auto_grow_enabled=true for production) in terraform/azure/postgresql.tf
-- [ ] T034 Configure PostgreSQL high availability using dynamic block (count based on var.postgres_ha_enabled, mode=ZoneRedundant, standby_availability_zone) in terraform/azure/postgresql.tf
-- [ ] T035 Configure PostgreSQL backup (backup_retention_days from var.backup_retention_days, geo_redundant_backup_enabled=false) in terraform/azure/postgresql.tf
-- [ ] T036 Configure PostgreSQL server parameters in terraform/azure/postgresql.tf: require_secure_transport=on, ssl_min_protocol_version=TLSv1.2, pgbouncer.enabled (conditional on production), log_statement (conditional on production)
-- [ ] T037 Create azurerm_postgresql_flexible_server_database resource (name=navigator, charset=UTF8, collation=en_US.utf8) in terraform/azure/postgresql.tf
-- [ ] T038 Create PostgreSQL connection string as local value in terraform/azure/postgresql.tf (format: postgresql://navadmin:PASSWORD@FQDN:5432/navigator?sslmode=require)
-- [ ] T039 Store PostgreSQL connection string conditionally: (1) if var.use_key_vault=true create azurerm_key_vault_secret, (2) if var.use_key_vault=false store as Container Apps secret in container-apps.tf (dual-mode configuration)
+- [X] T031 Create terraform/azure/postgresql.tf with Azure Database for PostgreSQL Flexible Server (version=14, delegated_subnet_id, private_dns_zone_id, administrator_login=navadmin, administrator_password from random_password resource)
+- [X] T032 Configure PostgreSQL SKU based on var.postgres_sku (Burstable B1ms for dev, General Purpose D2s_v3 for production) in terraform/azure/postgresql.tf
+- [X] T033 Configure PostgreSQL storage (var.postgres_storage_gb * 1024 MB, auto_grow_enabled=true for production) in terraform/azure/postgresql.tf
+- [X] T034 Configure PostgreSQL high availability using dynamic block (count based on var.postgres_ha_enabled, mode=ZoneRedundant, standby_availability_zone) in terraform/azure/postgresql.tf
+- [X] T035 Configure PostgreSQL backup (backup_retention_days from var.backup_retention_days, geo_redundant_backup_enabled=false) in terraform/azure/postgresql.tf
+- [X] T036 Configure PostgreSQL server parameters in terraform/azure/postgresql.tf: require_secure_transport=on, ssl_min_protocol_version=TLSv1.2, pgbouncer.enabled (conditional on production), log_statement (conditional on production)
+- [X] T037 Create azurerm_postgresql_flexible_server_database resource (name=navigator, charset=UTF8, collation=en_US.utf8) in terraform/azure/postgresql.tf
+- [X] T038 Create PostgreSQL connection string as local value in terraform/azure/postgresql.tf (format: postgresql://navadmin:PASSWORD@FQDN:5432/navigator?sslmode=require)
+- [X] T039 Store PostgreSQL connection string conditionally: (1) if var.use_key_vault=true create azurerm_key_vault_secret, (2) if var.use_key_vault=false store as Container Apps secret in container-apps.tf (dual-mode configuration)
 
 ### Container Apps & Container Registry
 
-- [ ] T040 Create terraform/azure/container-apps.tf with Log Analytics Workspace (sku=PerGB2018, retention_in_days conditional on environment: 30 for dev, 90 for production, daily_quota_gb conditional)
-- [ ] T041 Create Azure Container Apps Environment in terraform/azure/container-apps.tf with VNet integration (infrastructure_subnet_id from Container Apps subnet, internal_load_balancer_enabled=false for external ingress, zone_redundancy_enabled from var.enable_zone_redundancy, log_analytics_workspace_id)
-- [ ] T042 Create Navigator Container App in terraform/azure/container-apps.tf (image: public.ecr.aws/cds-snc/valentine:latest initially)
-- [ ] T043 Configure container resources in terraform/azure/container-apps.tf (cpu from var.container_cpu, memory from var.container_memory)
-- [ ] T044 Configure scaling rules in terraform/azure/container-apps.tf: dev uses http_scale_rule with concurrent_requests=10, production uses custom_scale_rule with type=cpu and metadata for threshold=70
-- [ ] T045 Configure Container Apps ingress in terraform/azure/container-apps.tf (external_enabled=true, target_port=4000, transport=http, allow_insecure_connections=false for HTTPS enforcement, traffic_weight 100% latest_revision, session_affinity sticky sessions enabled)
-- [ ] T046 Configure health probes in terraform/azure/container-apps.tf: liveness_probe (type=http, path="/", port=4000, initial_delay=10, period=30, timeout=5, failure_threshold=3), startup_probe (type=http, path="/", port=4000, period=10, failure_threshold=30 for 5min startup allowance)
-- [ ] T047 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
-- [ ] T048 Configure container environment variables with dual-mode secret references in terraform/azure/container-apps.tf: (1) if var.use_key_vault=true use secret blocks with key_vault_secret_id for DATABASE_URL, SECRET_KEY_BASE, (2) if var.use_key_vault=false use secret blocks with value from Terraform state/random_password resources, plus static env vars PORT=4000, PHX_HOST from ingress FQDN
-- [ ] T049 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf (conditional on var.use_key_vault, principal_id from container app identity, scope=key_vault_id)
-- [ ] T050 [P] Create terraform/azure/acr.tf with conditional Azure Container Registry (count = var.create_acr ? 1 : 0, sku conditional on environment: Basic for dev/Standard for production, admin_enabled=false, public_network_access_enabled conditional, georeplications=[], retention_policy for untagged manifests 30 days)
-- [ ] T051 [P] Grant Container App managed identity AcrPull role for ACR in terraform/azure/identity.tf (conditional on var.create_acr)
+- [X] T040 Create terraform/azure/container-apps.tf with Log Analytics Workspace (sku=PerGB2018, retention_in_days conditional on environment: 30 for dev, 90 for production, daily_quota_gb conditional)
+- [X] T041 Create Azure Container Apps Environment in terraform/azure/container-apps.tf with VNet integration (infrastructure_subnet_id from Container Apps subnet, internal_load_balancer_enabled=false for external ingress, zone_redundancy_enabled from var.enable_zone_redundancy, log_analytics_workspace_id)
+- [X] T042 Create Navigator Container App in terraform/azure/container-apps.tf (image: public.ecr.aws/cds-snc/valentine:latest initially)
+- [X] T043 Configure container resources in terraform/azure/container-apps.tf (cpu from var.container_cpu, memory from var.container_memory)
+- [X] T044 Configure scaling rules in terraform/azure/container-apps.tf: dev uses http_scale_rule with concurrent_requests=10, production uses custom_scale_rule with type=cpu and metadata for threshold=70
+- [X] T045 Configure Container Apps ingress in terraform/azure/container-apps.tf (external_enabled=true, target_port=4000, transport=http, allow_insecure_connections=false for HTTPS enforcement, traffic_weight 100% latest_revision, session_affinity sticky sessions enabled)
+- [X] T046 Configure health probes in terraform/azure/container-apps.tf: liveness_probe (type=http, path="/", port=4000, initial_delay=10, period=30, timeout=5, failure_threshold=3), startup_probe (type=http, path="/", port=4000, period=10, failure_threshold=30 for 5min startup allowance)
+- [X] T047 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
+- [X] T048 Configure container environment variables with dual-mode secret references in terraform/azure/container-apps.tf: (1) if var.use_key_vault=true use secret blocks with key_vault_secret_id for DATABASE_URL, SECRET_KEY_BASE, (2) if var.use_key_vault=false use secret blocks with value from Terraform state/random_password resources, plus static env vars PORT=4000, PHX_HOST from ingress FQDN
+- [X] T049 Grant Container App managed identity Key Vault Secrets User role in terraform/azure/identity.tf (conditional on var.use_key_vault, principal_id from container app identity, scope=key_vault_id)
+- [X] T050 [P] Create terraform/azure/acr.tf with conditional Azure Container Registry (count = var.create_acr ? 1 : 0, sku conditional on environment: Basic for dev/Standard for production, admin_enabled=false, public_network_access_enabled conditional, georeplications=[], retention_policy for untagged manifests 30 days)
+- [X] T051 [P] Grant Container App managed identity AcrPull role for ACR in terraform/azure/identity.tf (conditional on var.create_acr)
 
 ### Storage Account (Optional)
 
-- [ ] T052 [P] Create terraform/azure/storage.tf with conditional Azure Storage Account (count = var.create_storage_account ? 1 : 0, SKU: Standard_LRS for dev/Standard_ZRS for production, access_tier=Hot, min_tls_version=TLS1_2, enable_https_traffic_only=true)
-- [ ] T053 [P] Create blob container for user uploads in terraform/azure/storage.tf (conditional on var.create_storage_account, name=user-uploads, container_access_type=private)
-- [ ] T054 [P] Configure storage lifecycle management in terraform/azure/storage.tf (conditional on var.create_storage_account): rule to move blobs to Cool tier after 90 days, archive after 180 days
-- [ ] T055 [P] Create conditional storage private endpoint in terraform/azure/storage.tf (count = var.create_storage_account && var.environment == "production" ? 1 : 0, subresource_names=["blob"])
-- [ ] T056 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
-- [ ] T057 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
+- [X] T052 [P] Create terraform/azure/storage.tf with conditional Azure Storage Account (count = var.create_storage_account ? 1 : 0, SKU: Standard_LRS for dev/Standard_ZRS for production, access_tier=Hot, min_tls_version=TLS1_2, enable_https_traffic_only=true)
+- [X] T053 [P] Create blob container for user uploads in terraform/azure/storage.tf (conditional on var.create_storage_account, name=user-uploads, container_access_type=private)
+- [X] T054 [P] Configure storage lifecycle management in terraform/azure/storage.tf (conditional on var.create_storage_account): rule to move blobs to Cool tier after 90 days, archive after 180 days
+- [X] T055 [P] Create conditional storage private endpoint in terraform/azure/storage.tf (count = var.create_storage_account && var.environment == "production" ? 1 : 0, subresource_names=["blob"])
+- [X] T056 Run `cd terraform/env/production && terragrunt validate` - compute/data tier checkpoint
+- [X] T057 Run `cd terraform/env/production && terragrunt plan` to preview infrastructure changes
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
 
