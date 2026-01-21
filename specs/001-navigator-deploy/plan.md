@@ -1,13 +1,13 @@
 # Architecture Plan: Navigator Azure Deployment
 
-**Branch**: `001-navigator-deploy` | **Date**: January 14, 2026 (Updated: January 16, 2026) | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-navigator-deploy` | **Date**: January 14, 2026 (Updated: January 20, 2026) | **Spec**: [spec.md](./spec.md)
 **Input**: Infrastructure specification from `/specs/001-navigator-deploy/spec.md`
 
 **Note**: This plan has been enriched with deep research. See [research.md](./research.md) for Well-Architected Framework analysis and best practices, [architecture.md](./architecture.md) for detailed infrastructure design, [quickstart.md](./quickstart.md) for step-by-step provisioning guide, and [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive Azure Verified Modules analysis.
 
 ## Summary
 
-Deploy the Navigator threat modeling application (Elixir/Phoenix) to Azure with minimal infrastructure suitable for 50-100 concurrent users. The architecture uses Azure Container Apps for serverless container hosting, Azure Database for PostgreSQL Flexible Server for persistence, and Azure Key Vault for secrets management. This design mirrors the existing AWS architecture (ECS Fargate + Aurora PostgreSQL) while leveraging Azure-managed services to minimize operational overhead. Initial deployment targets development/staging environments with the ability to scale to production through configuration-driven environment promotion using Terragrunt orchestration.
+Deploy the Navigator threat modeling application (Elixir/Phoenix) to Azure with minimal infrastructure suitable for 50-100 concurrent users. The architecture uses Azure Container Apps for serverless container hosting, Azure Database for PostgreSQL Flexible Server for persistence, and optional Azure Key Vault for secrets management. This design mirrors the existing AWS architecture (ECS Fargate + Aurora PostgreSQL) while leveraging Azure-managed services to minimize operational overhead. Initial deployment targets development/staging environments with the ability to scale to production through configuration-driven environment promotion using Terragrunt orchestration.
 
 **Prerequisites**: This plan assumes baseline Azure infrastructure (resource groups) and Terraform state management infrastructure (Azure Storage Account for remote backend, state locking) are already provisioned and configured.
 
@@ -32,7 +32,7 @@ Before implementing this plan, ensure the following baseline infrastructure exis
   - Soft delete: Enabled
 - **Storage Containers**: `tfstate` container in each storage account
 - **Access Control**: RBAC permissions configured
-  - CI/CD service principals: Storage Blob Data Contributor role
+  - Deployment identities: Storage Blob Data Contributor role
   - Developers: Storage Blob Data Reader role (read-only)
   - Ops team: Storage Blob Data Contributor role
 
@@ -46,6 +46,8 @@ Before implementing this plan, ensure the following baseline infrastructure exis
 **Module Versions**: Direct resources only - no modules used in this implementation (follows "Prefer Resource Simplicity" principle v3.0.0). See [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive analysis of Azure Verified Modules decision.  
 **State Backend**: Azure Blob Storage with state locking (azurerm backend)  
 **Environment Strategy**: Terragrunt with directory-based environments (terraform/env/{dev,staging,production}) referencing shared module (terraform/azure/)  
+**Secrets Management**: Optional Azure Key Vault (configurable per environment via `use_key_vault` variable, defaults to false)  
+**Deployment Method**: Manual deployment using Terragrunt (CI/CD out of scope, may be added later)  
 **Testing**: terraform validate, terraform plan at tier boundaries  
 **Security Scanning**: Trivy for infrastructure security scanning  
 **Cost Estimation**: Azure Cost Management + Infracost (optional)  
@@ -61,12 +63,12 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 **1. Prefer Managed Services** ✅ (consolidated from "Favor Managed Services" + "Enforce Cloud Service Hierarchy" in v3.0.0)  
 - Uses Azure Container Apps (fully managed serverless containers)
 - Uses Azure Database for PostgreSQL Flexible Server (managed database with automated backups, patching)
-- Uses Azure Key Vault (managed secrets service)
+- Uses optional Azure Key Vault (managed secrets service)
 - Uses Azure Monitor + Application Insights (managed observability)
 - Avoids self-managed VMs, container orchestration clusters, or database installations
 
 **2. Design for Simplicity** ✅  
-- Baseline (Dev): Single-zone deployment, Basic/Burstable tiers, minimal networking
+- Baseline (Dev): Single-zone deployment, Basic/Burstable tiers, minimal networking, Key Vault disabled by default
 - Enhanced (Production): Zone-redundant deployment, Standard/General Purpose tiers, essential features only
 - No multi-region complexity, no service mesh, no unnecessary abstractions
 
@@ -76,7 +78,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Target availability: 99.9% for internal tools (appropriate for use case)
 
 **4. Optimize for Cost** ✅  
-- Baseline (Dev): Smallest SKUs (Container Apps Consumption plan, PostgreSQL Burstable B1ms), auto-shutdown schedules
+- Baseline (Dev): Smallest SKUs (Container Apps Consumption plan, PostgreSQL Burstable B1ms), auto-shutdown schedules, Key Vault disabled (~$2-5/month savings)
 - Enhanced (Production): Right-sized Standard/General Purpose tiers, Azure reservations for predictable workloads
 - Monthly operating cost target: $50-150/month (dev), scalable to production needs
 
@@ -93,24 +95,25 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Production deployment scenarios validating direct resource approach
 - Baseline environments use direct resources exclusively for maximum transparency and learning
 
-**2. Automate Validation and Deployment** ✅ (consolidated from "Validate During Development" + "Design for Continuous Deployment" in v3.0.0)  
+**2. Automate Validation** ✅
 - terraform validate after each file modification
 - terraform plan at tier boundaries (network complete, compute complete)
 - Trivy for security scanning (exposed storage, missing encryption, overly permissive network rules)
 - terraform fmt for code consistency
 
 **3. Manage Secrets Securely** ✅  
-- All secrets stored in Azure Key Vault (database passwords, API keys, connection strings)
-- References secrets in Terraform using azurerm_key_vault_secret data sources
-- Uses Azure Managed Identities for Container Apps to access Key Vault (no stored credentials)
-- Never commits .tfvars files containing secrets (gitignored)
+- Auto-generated secrets created using Terraform `random_password` resource (PostgreSQL passwords, SECRET_KEY_BASE)
+- Injected secrets passed as Terraform input variables during manual deployment
+- Optional Azure Key Vault for centralized secret management (configurable per environment)
+- When Key Vault enabled: Uses Azure Managed Identities for Container Apps to access secrets (no stored credentials)
+- Never commits secrets in code or .tfvars files (gitignored)
 
 ### Implementation Approaches
 
 **Configuration-Driven Environment Strategy** ✅  
 - Shared Terraform module under `terraform/azure/` containing all infrastructure definitions
 - Terragrunt configuration in `terraform/env/{dev,staging,production}/terragrunt.hcl` referencing shared module
-- Environment-specific inputs control SKUs, scaling limits, feature flags, backup retention
+- Environment-specific inputs control SKUs, scaling limits, feature flags (including `use_key_vault`), backup retention
 - Terragrunt auto-generates separate Azure Storage Account backends per environment
 - Deployment strategy: validate in dev → promote to staging → deploy to production
 
@@ -165,8 +168,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Private endpoint in VNet (database not publicly accessible)
   - Access restricted to Container Apps subnet only via VNet integration
 - Connection:
-  - Connection string stored in Azure Key Vault
-  - Container Apps retrieves credentials via Managed Identity
+  - Connection string constructed from auto-generated credentials (stored in Terraform state or optional Key Vault)
+  - Container Apps retrieves credentials from Terraform-managed secrets
   - SSL/TLS enforcement: Required (TLS 1.2+)
 - Performance:
   - Connection pooling: pgBouncer (built-in PostgreSQL Flexible Server feature, similar to AWS RDS Proxy concept)
@@ -176,7 +179,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - SKU: Standard LRS (locally redundant storage, baseline) or Standard ZRS (zone-redundant, enhanced)
 - Blob container for user-uploaded threat models or attachments
 - Access tier: Hot (for frequently accessed data)
-- Lifecycle management: Archive to Cool tier after 90 days, delete after 365 days
+- Lifecycle management: Move to Cool tier after 90 days, archive after 180 days
 - Encryption: Microsoft-managed keys (platform encryption at rest)
 - Private endpoint: Enabled for enhanced security (production)
 
@@ -190,13 +193,13 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - PostgreSQL Subnet: 10.240.2.0/24 (delegated to Microsoft.DBforPostgreSQL/flexibleServers for private endpoint)
   - Application Gateway Subnet: 10.240.3.0/24 (for future ALB-equivalent setup if needed)
 - DNS: Azure-provided DNS (168.63.129.16) for private endpoint resolution
-- Service Endpoints: Microsoft.Storage (if using Storage Account), Microsoft.KeyVault
+- Service Endpoints: Microsoft.Storage (if using Storage Account), Microsoft.KeyVault (if using Key Vault)
 
 **Network Security Groups (NSGs)**
 - Container Apps NSG:
   - Inbound: Allow HTTPS (443) from internet (public web application - unrestricted source is intentional and documented)
   - Outbound: Segregated by destination for least-privilege access:
-    - Azure services: Allow 443 to AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
+    - Azure services: Allow 443 to AzureKeyVault (conditional - only if `use_key_vault = true`), CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
     - Internet (conditional): Allow 443 to internet for OpenAI API integration (controlled by `enable_outbound_internet` variable; default: true for dev/staging, configurable for production based on security policy)
     - PostgreSQL: Allow 5432 to PostgreSQL subnet (existing rule)
 - PostgreSQL NSG:
@@ -211,7 +214,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 
 **DNS and TLS**
 - DNS Hosting: Azure DNS zone for custom domain (navigator-dev.cdssandbox.xyz, valentine.cds-snc.ca)
-  - **Implementation**: DNS zones created by Terraform (task T057) as part of infrastructure deployment
+  - **Implementation**: DNS zones created by Terraform as part of infrastructure deployment
   - Domain registrar NS records must point to Azure DNS name servers (manual post-deployment configuration step)
 - A Record: Points to Container Apps environment default domain or Application Gateway public IP
 - TLS Certificates:
@@ -231,63 +234,88 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Network Security Groups (NSGs):
   - Container Apps NSG:
     - Inbound: 443 from internet (unrestricted for public web application - intentional design decision, documented in terraform/azure/security.tf)
-    - Outbound: Segregated rule set using service tags for Azure services (AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry) and conditional internet access (controlled by `enable_outbound_internet` variable)
+    - Outbound: Segregated rule set using service tags for Azure services (AzureKeyVault - conditional, CognitiveServices, AzureMonitor, AzureContainerRegistry) and conditional internet access (controlled by `enable_outbound_internet` variable)
   - PostgreSQL NSG: Inbound 5432 from Container Apps subnet only, outbound deny all
   - Security Scanning: Trivy findings AVD-AZU-0047 (unrestricted inbound) and AVD-AZU-0051 (unrestricted outbound) suppressed with business justifications in IaC code
 - Private Endpoints:
   - PostgreSQL: Private endpoint in VNet (no public internet access)
-  - Key Vault: Private endpoint for enhanced security (production, conditional)
+  - Key Vault (conditional): Private endpoint for enhanced security - only if `use_key_vault = true` AND production environment
   - Storage Account: Private endpoint for blob access (production, conditional)
 - TLS Enforcement:
   - Container Apps ingress: TLS 1.2+ only
   - PostgreSQL connections: Require SSL/TLS (enforced at database level)
-  - Key Vault access: HTTPS only
+  - Key Vault access (conditional): HTTPS only - if `use_key_vault = true`
 
 **Identity and Access Management (IAM)**
 - Managed Identities:
-  - Container Apps: System-assigned managed identity with Key Vault Secrets User role (read secrets)
+  - Container Apps: System-assigned managed identity
+  - Key Vault access (conditional): If `use_key_vault = true`, assign Secrets User role to Container Apps identity
   - ACR Integration: Managed identity for pulling container images (AcrPull role)
 - Role-Based Access Control (RBAC):
-  - Container Apps Contributor: Developers can deploy app revisions, view logs
-  - Key Vault Secrets Officer: Ops team manages secrets (write access)
-  - Key Vault Secrets User: Container Apps read-only secret access
-  - PostgreSQL Administrator: Database schema management (humans)
-  - PostgreSQL User: Application runtime access (Managed Identity or connection string)
-- Service Principal (CI/CD):
-  - GitHub OIDC Federated Credential: No long-lived secrets for GitHub Actions
-  - Scoped to resource group, least-privilege permissions (Contributor on Container App, read-only on Key Vault)
+  - Container Apps Contributor: Operators deploy app revisions, view logs
+  - Key Vault Secrets Officer (conditional): Operators manage secrets - only if `use_key_vault = true`
+  - Key Vault Secrets User (conditional): Container Apps read-only secret access - only if `use_key_vault = true`
+  - PostgreSQL Administrator: Database schema management
+  - PostgreSQL User: Application runtime access (connection string)
+  - Terraform State Storage: Storage Blob Data Contributor (operators read/write state during deployment)
+- Deployment Identity:
+  - Manual deployment using Azure CLI authenticated user or service principal
+  - Scoped to resource group with least-privilege permissions
+  - No CI/CD automation (out of current scope, may be added later)
 
 **Secrets Management**
-- Azure Key Vault:
-  - SKU: Standard (baseline), Premium (enhanced, HSM-backed keys)
-  - Secrets stored:
-    - PostgreSQL connection string (admin and app user credentials)
-    - Azure OpenAI API key and endpoint (or OpenAI API key)
-    - Phoenix SECRET_KEY_BASE (generated, not example from docker-compose.yml)
-    - OAuth credentials (Google, Microsoft - conditional based on environment)
-  - Access policy model: Azure RBAC (modern, recommended over legacy access policies)
-  - Soft delete: Enabled (90-day retention for accidental deletion recovery)
-  - Purge protection: Enabled for production (prevents permanent deletion during retention)
-  - Private endpoint: Enabled for production (no public internet access, conditional)
-- Secret References:
-  - Container Apps references Key Vault secrets via secret URI
-  - Secrets injected as environment variables at container startup
-  - Automatic secret refresh on container restart (manual trigger or new revision deployment)
+
+**Strategy**: Azure Key Vault is **OPTIONAL** - configurable per environment via `use_key_vault` variable
+
+**Secret Categories**:
+
+1. **Auto-Generated Secrets** (created by Terraform during deployment):
+   - PostgreSQL admin password (`random_password` resource)
+   - PostgreSQL application user password (`random_password` resource)
+   - Phoenix SECRET_KEY_BASE (generated cryptographically via `random_password`)
+   - Storage: Terraform state file (encrypted at rest in Azure Storage Account)
+
+2. **Injected Secrets** (provided at deployment time):
+   - Azure OpenAI API key and endpoint (if using Azure OpenAI, conditional)
+   - Google OAuth client ID and secret (if using Google auth, conditional)
+   - Microsoft OAuth credentials (if using Azure AD B2C, conditional)
+   - Storage: Passed as Terraform input variables during manual deployment
+
+**Key Vault Configuration** (when enabled via `use_key_vault = true`):
+- SKU: Standard (dev/staging) or Premium (production)
+- Secrets stored: All auto-generated and injected secrets listed above
+- Access control: Azure RBAC (Container Apps Managed Identity → Secrets User role)
+- Container Apps: References secrets via Key Vault URI (secrets injected as environment variables at runtime)
+- Secret rotation: Update Key Vault secret → Container Apps picks up on restart
+- Private endpoint: Optional for production (no public internet access)
+- Soft delete: 90-day retention for accidental deletion recovery
+- Purge protection: Enabled for production (prevents permanent deletion)
+
+**Direct Secret Injection** (when `use_key_vault = false`, default):
+- Auto-generated secrets: Retrieved from Terraform state, injected into Container Apps secrets
+- Injected secrets: Passed as Terraform input variables, injected into Container Apps secrets
+- Container Apps: Secrets defined as Container Apps secrets (referenced by environment variables)
+- Secret rotation: Re-run `terragrunt apply` to update secrets
+
+**Recommendation**:
+- Development: `use_key_vault = false` (simpler, faster iteration, $0 cost)
+- Production: `use_key_vault = true` (if GC compliance requires runtime audit trail or zero-downtime rotation)
 
 **Data Encryption**
 - Encryption at Rest:
   - PostgreSQL: Automatic encryption with Microsoft-managed keys (platform default)
   - Storage Account: AES-256 encryption with Microsoft-managed keys
-  - Key Vault: Option to use customer-managed keys (CMK) via Azure Key Vault for enhanced control (production)
+  - Terraform State: Encryption enabled on Azure Storage Account (Microsoft-managed keys)
+  - Key Vault (conditional): If enabled, uses Microsoft-managed keys (Standard SKU) or HSM-backed keys (Premium SKU)
 - Encryption in Transit:
-  - All connections: TLS 1.2+ enforced (Container Apps ingress, PostgreSQL connections, Key Vault access)
-  - Internal VNet traffic: Optional TLS for Container Apps to PostgreSQL (enforced at database level)
+  - All connections: TLS 1.2+ enforced (Container Apps ingress, PostgreSQL connections)
+  - Key Vault access (conditional): HTTPS only - if `use_key_vault = true`
 
 **Security Scanning and Monitoring**
 - Microsoft Defender for Cloud (post-deployment manual configuration):
   - Defender for Containers: Vulnerability scanning for ACR images, runtime threat detection
   - Defender for Databases: PostgreSQL threat detection, vulnerability assessments
-  - Defender for Key Vault: Unusual access pattern detection
+  - Defender for Key Vault (conditional): Unusual access pattern detection - only if `use_key_vault = true`
 - Trivy: Infrastructure-as-code security scanning during Terraform development and container image vulnerability scanning
 - Azure Policy: Enforce compliance (require encryption, private endpoints, TLS versions)
 
@@ -312,6 +340,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 | `postgres_storage_gb` | 32 GB | 64 GB | 128 GB |
 | `postgres_ha_enabled` | false | true | true |
 | `backup_retention_days` | 7 | 14 | 14 |
+| `use_key_vault` | false | false | false (default, enable if compliance requires) |
 | `enable_application_insights` | false | true | true |
 | `enable_auto_shutdown` | true (evenings/weekends) | false | false |
 | `enable_zone_redundancy` | false | true | true |
@@ -321,7 +350,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 | `create_azure_ad_b2c` | true | true | false |
 
 **Conditional Resource Creation** (using Terraform `count` expressions in shared module):
-- `count = var.create_application_insights ? 1 : 0` - Application Insights for production monitoring
+- `count = var.use_key_vault ? 1 : 0` - Azure Key Vault for centralized secret management (optional, defaults to false)
+- `count = var.enable_application_insights ? 1 : 0` - Application Insights for production monitoring
 - `count = var.enable_auto_shutdown ? 1 : 0` - Auto-shutdown schedules for dev cost savings
 - `count = var.create_google_auth ? 1 : 0` - Google OAuth integration for production
 - `count = var.create_azure_ad_b2c ? 1 : 0` - Azure AD B2C for dev/staging authentication
@@ -355,7 +385,13 @@ terragrunt plan    # Review production changes
 terragrunt apply   # Deploy to production (requires explicit approval)
 ```
 
-**Note**: CI/CD automation (GitHub Actions) can be added later as an enhancement. Initial deployment uses manual terraform commands for simplicity and control.
+**Deployment Prerequisites**:
+- Azure CLI authenticated with appropriate subscription
+- Terraform and Terragrunt installed locally
+- Access to Terraform state storage (Storage Blob Data Contributor role)
+- Injected secrets prepared (OAuth credentials, API keys if applicable)
+
+**Note**: CI/CD automation (GitHub Actions, Azure DevOps) is out of scope for initial implementation. Manual deployment provides explicit control and approval workflow. CI/CD can be added as future enhancement.
 
 ### Complexity Level
 
@@ -377,6 +413,7 @@ terragrunt apply   # Deploy to production (requires explicit approval)
 - Managed Certificates (free, automatic)
 - Basic monitoring (Container Apps default metrics, no Application Insights)
 - Auto-shutdown schedules (evenings, weekends to reduce cost)
+- Key Vault disabled by default (~$2-5/month savings)
 
 **Enhanced Complexity** (Staging/Production Environments)
 
@@ -396,6 +433,7 @@ terragrunt apply   # Deploy to production (requires explicit approval)
 - Automated backups with 14-day retention, point-in-time restore
 - Comprehensive monitoring, alerting, and log analytics
 - Optional Application Gateway with WAF for enhanced security (if required by compliance)
+- Optional Key Vault for centralized secret management (if required by compliance)
 
 **Complexity Progression Path**:
 - Start with Baseline for initial deployment (minimize cost, rapid iteration)
@@ -447,7 +485,7 @@ terraform {
 **Encryption and Security**:
 - Encryption at rest: Microsoft-managed keys (platform default)
 - Encryption in transit: HTTPS-only access (enforced by storage account policy)
-- Access control: Azure RBAC (Storage Blob Data Contributor role for CI/CD service principal)
+- Access control: Azure RBAC (Storage Blob Data Contributor role for deployment identities)
 - Network restrictions: Private endpoint for production (no public internet access to state storage)
 
 **Versioning and Backup**:
@@ -458,7 +496,7 @@ terraform {
 
 **Access Control and Auditing**:
 - IAM Roles:
-  - CI/CD Service Principal: Storage Blob Data Contributor (read/write state files)
+  - Deployment Identities: Storage Blob Data Contributor (read/write state files)
   - Developers: Storage Blob Data Reader (read-only, cannot modify state directly)
   - Ops Team: Storage Blob Data Contributor + Owner (full access for emergency recovery)
 - Diagnostic settings: Enable logging for state storage access (audit trail)
@@ -501,12 +539,12 @@ terraform/
 ├── azure/                          # Shared Terraform module (infrastructure definitions)
 │   ├── versions.tf                 # Terraform and provider version constraints
 │   ├── provider.tf                 # Azure provider configuration
-│   ├── variables.tf                # Input variable declarations (all configurable parameters)
+│   ├── variables.tf                # Input variable declarations (includes use_key_vault flag)
 │   ├── outputs.tf                  # Output value declarations
 │   ├── vnet.tf                     # Virtual Network, subnets, NSGs
 │   ├── container-apps.tf           # Container Apps Environment and Navigator app
-│   ├── postgresql.tf               # PostgreSQL Flexible Server
-│   ├── keyvault.tf                 # Key Vault for secrets management
+│   ├── postgresql.tf               # PostgreSQL Flexible Server (includes random_password for credentials)
+│   ├── keyvault.tf                 # Key Vault (conditional: count = var.use_key_vault ? 1 : 0)
 │   ├── dns.tf                      # Azure DNS zone and records
 │   ├── monitoring.tf               # Application Insights, Log Analytics (conditional)
 │   ├── identity.tf                 # Managed Identities, RBAC role assignments
@@ -520,13 +558,13 @@ terraform/
 │
 └── env/                            # Environment-specific configurations (Terragrunt)
     ├── dev/
-    │   └── terragrunt.hcl          # Dev environment configuration
+    │   └── terragrunt.hcl          # Dev environment configuration (use_key_vault = false)
     └── production/
-        └── terragrunt.hcl          # Production environment configuration
+        └── terragrunt.hcl          # Production environment configuration (use_key_vault = false by default)
 
 .specify/                           # Project management (existing)
 ├── memory/
-│   └── principles.md               # Infrastructure principles (v2.0.0)
+│   └── principles.md               # Infrastructure principles (v3.0.0)
 └── scripts/
     ├── bash/
     │   ├── setup-plan.sh           # Planning workflow script
@@ -556,7 +594,7 @@ README.md                           # Root project documentation
 
 **Terragrunt Configuration**:
 - `source = "../..//azure"`: Reference shared module from environment directory
-- `inputs {}`: Environment-specific parameters (SKUs, scaling, feature flags, domain names)
+- `inputs {}`: Environment-specific parameters (SKUs, scaling, feature flags including `use_key_vault`, domain names)
 - `remote_state`: Auto-generate Azure Storage backend configuration
 - `dependencies`: Manage deployment order if needed (network before compute)
 
@@ -571,7 +609,7 @@ README.md                           # Root project documentation
 
 ## Complexity Tracking
 
-> No principles violations requiring justification. This plan adheres to all Navigator Azure Infrastructure Principles (v2.0.0).
+> No principles violations requiring justification. This plan adheres to all Navigator Azure Infrastructure Principles (v3.0.0).
 
 ## Implementation Scope Summary
 
@@ -579,11 +617,12 @@ README.md                           # Root project documentation
 - Azure Container Apps environment and Navigator application
 - Azure Database for PostgreSQL Flexible Server
 - Virtual Network, subnets, and Network Security Groups
-- Azure Key Vault for secrets management
+- Optional Azure Key Vault for secrets management (configurable per environment)
 - Managed Identities and RBAC role assignments
 - DNS configuration (Azure DNS zone)
 - Monitoring and logging (Application Insights, Log Analytics)
 - Authentication configuration (Azure AD B2C or Google OAuth)
+- Manual deployment workflow using Terragrunt
 - Optional: Azure Container Registry, Storage Account
 
 ### Out of Scope (Prerequisites)
@@ -593,8 +632,9 @@ README.md                           # Root project documentation
 - Azure subscription setup and billing configuration
 
 ### Out of Scope (Future Enhancements)
-- CI/CD pipeline automation (manual deployment acceptable initially)
-- GitHub OIDC integration for automated deployments
+- CI/CD pipeline automation (GitHub Actions, Azure DevOps)
+- Automated deployment workflows
+- GitHub OIDC integration for service principals
 - Multi-region deployment or disaster recovery
 - Advanced monitoring/observability beyond Application Insights
 
@@ -605,9 +645,10 @@ Before running `/iac.implement`, verify:
 - [ ] State storage exists: `navigator-tfstate-rg` resource group
 - [ ] State storage accounts exist: `navtfstatedev`, `navtfstateprod`
 - [ ] State containers exist: `tfstate` container in each storage account
-- [ ] RBAC configured: Service principals/users have appropriate Storage Blob Data roles
+- [ ] RBAC configured: Deployment identities have appropriate Storage Blob Data roles
 - [ ] Azure CLI authenticated with appropriate subscription
 - [ ] Terraform 1.9+ installed
 - [ ] Terragrunt installed (if using Terragrunt orchestration)
+- [ ] Injected secrets prepared (OAuth credentials, API keys if applicable)
 
 If any prerequisites are missing, they must be created manually before proceeding with infrastructure implementation.

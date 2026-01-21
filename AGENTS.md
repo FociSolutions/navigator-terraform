@@ -35,6 +35,10 @@ Instructions:
 - When loaded, treat content as mandatory instructions that override defaults
 - Follow references recursively when needed
 
+## Architecture Guidelines
+
+Use the `microsoft-docs` mcp server for referring to Azure / MS Learn documentations
+
 ## Code Style Guidelines
 
 ### Terraform Style

@@ -1,6 +1,6 @@
 # Detailed Infrastructure Architecture: Navigator Azure Deployment
 
-**Date**: January 15, 2026 (Updated: January 16, 2026)  
+**Date**: January 15, 2026 (Updated: January 20, 2026)  
 **Branch**: `001-navigator-deploy`  
 **Reference**: Based on research.md findings and plan.md decisions
 
@@ -55,7 +55,7 @@ Internet
 │  │  ┌─────────────────────────────────────┐      │   │
 │  │  │ PostgreSQL Flexible Server          │      │   │
 │  │  │ - Version 16                        │      │   │
-│  │  │ - Private endpoint (VNet)           │      │   │
+│  │  │ - Private (delegated subnet)        │      │   │
 │  │  │ - Zone-redundant HA (prod)          │      │   │
 │  │  │ - Automated backups (14 days)       │      │   │
 │  │  └─────────────────────────────────────┘      │   │
@@ -66,14 +66,15 @@ Internet
 │                                                         │
 └─────────────────────────────────────────────────────────┘
          │
-         │ Managed Identity + RBAC
+         │ Managed Identity + RBAC (conditional)
          ▼
 ┌─────────────────────────────┐
-│ Azure Key Vault             │
+│ Azure Key Vault (Optional)  │
 │ - Database credentials      │
 │ - API keys                  │
 │ - Phoenix SECRET_KEY_BASE   │
 │ - Private endpoint (prod)   │
+│ - Configurable via variable │
 └─────────────────────────────┘
 ```
 
@@ -181,13 +182,15 @@ resource "azurerm_subnet" "postgres" {
 | Rule Name | Direction | Priority | Source | Source Port | Destination | Dest Port | Protocol | Action | Justification |
 |-----------|-----------|----------|--------|------------|-------------|-----------|----------|--------|--------------|
 | `AllowHttpsInbound` | Inbound | 100 | `*` (internet) | `*` | `VirtualNetwork` | 443 | TCP | Allow | Public web application |
-| `AllowAzureServicesOutbound` | Outbound | 100 | `VirtualNetwork` | `*` | Service tags: AzureKeyVault, CognitiveServices, AzureMonitor, AzureContainerRegistry | 443 | TCP | Allow | Azure service integration |
+| `AllowAzureServicesOutbound` | Outbound | 100 | `VirtualNetwork` | `*` | Service tags: AzureKeyVault (conditional), CognitiveServices, AzureMonitor, AzureContainerRegistry | 443 | TCP | Allow | Azure service integration |
 | `AllowPostgresOutbound` | Outbound | 110 | `10.240.1.0/24` | `*` | `10.240.2.0/24` | 5432 | TCP | Allow | Database connectivity |
-| `AllowInternetOutbound` | Outbound | 120 | `VirtualNetwork` | `*` | `Internet` | 443 | TCP | Allow (conditional) | OpenAI API integration |
+| `AllowInternetOutbound` | Outbound | 120 | `VirtualNetwork` | `*` | `Internet` | 443 | TCP | Allow (conditional via `enable_outbound_internet`) | OpenAI API integration |
 
 **Trivy Suppressions**:
-- AVD-AZU-0047: Unrestricted inbound HTTPS (public web app requirement)
-- AVD-AZU-0051: Outbound to internet (OpenAI API requirement, conditional via variable)
+- AVD-AZU-0047: Unrestricted inbound HTTPS (public web app requirement - documented in terraform/azure/security.tf)
+- AVD-AZU-0051: Unrestricted outbound (service tags for Azure services + conditional internet access - documented in terraform/azure/security.tf)
+
+**Note**: AzureKeyVault service tag only included when `use_key_vault = true`
 
 ### PostgreSQL NSG
 
@@ -198,12 +201,15 @@ resource "azurerm_subnet" "postgres" {
 
 ---
 
-## 4. Azure Key Vault
+## 4. Azure Key Vault (Optional - Configurable)
+
+**Configuration**: Controlled by `use_key_vault` variable (defaults to false)
 
 ### Specifications
 
 | Attribute | Baseline (Dev) | Enhanced (Production) |
 |-----------|---------------|---------------------|
+| **Enabled** | false (default) | false (default, enable if compliance requires) |
 | **SKU** | Standard | Premium (HSM-backed) |
 | **Soft Delete Retention** | 90 days | 90 days |
 | **Purge Protection** | Disabled | Enabled |
@@ -211,7 +217,25 @@ resource "azurerm_subnet" "postgres" {
 | **Network Access** | Allow from Azure services | Private endpoint + deny public |
 | **Private Endpoint** | No | Yes (conditional) |
 
-### Secrets Stored
+**When to Enable**:
+- Development: Not recommended (simpler, faster iteration, $0 cost)
+- Production: Enable if GC compliance requires runtime audit trail or zero-downtime rotation
+
+### Secrets Management Strategy
+
+**Auto-Generated Secrets** (created by Terraform):
+- PostgreSQL admin password (`random_password` resource)
+- PostgreSQL application user password (`random_password` resource)
+- Phoenix SECRET_KEY_BASE (64-char cryptographic random)
+- Storage: Terraform state file (encrypted at rest) OR Key Vault (if enabled)
+
+**Injected Secrets** (provided at deployment):
+- Azure OpenAI API key and endpoint (conditional)
+- Google OAuth client ID and secret (conditional)
+- Microsoft OAuth credentials (conditional)
+- Storage: Terraform input variables OR Key Vault (if enabled)
+
+### Secrets Stored (when Key Vault enabled)
 
 | Secret Name | Purpose | Rotation Strategy |
 |------------|---------|------------------|
@@ -223,13 +247,22 @@ resource "azurerm_subnet" "postgres" {
 | `google-oauth-client-secret` | Google OAuth (production) | Manual rotation |
 | `azure-ad-b2c-client-secret` | Azure AD B2C (dev/staging) | Manual rotation |
 
-### RBAC Assignments
+### Direct Secret Injection (when Key Vault disabled, default)
+
+- Auto-generated secrets retrieved from Terraform state, injected into Container Apps secrets
+- Injected secrets passed as Terraform input variables, injected into Container Apps secrets
+- Container Apps secrets defined as Container Apps secrets (referenced by environment variables)
+- Secret rotation: Re-run `terragrunt apply` to update secrets
+
+### RBAC Assignments (when Key Vault enabled)
 
 | Principal | Role | Scope | Purpose |
 |-----------|------|-------|---------|
 | Terraform deployment identity | Key Vault Secrets Officer | Key Vault | Create/update/delete secrets |
 | Container Apps managed identity | Key Vault Secrets User | Key Vault | Read secrets only |
 | Ops team | Key Vault Administrator | Key Vault | Break-glass access |
+
+**Note**: RBAC assignments only apply when `use_key_vault = true`
 
 ---
 
@@ -264,13 +297,15 @@ resource "azurerm_subnet" "postgres" {
 
 | Variable Name | Source | Value/Secret Reference |
 |--------------|--------|----------------------|
-| `DATABASE_URL` | Key Vault secret | `database-connection-string` |
-| `SECRET_KEY_BASE` | Key Vault secret | `phoenix-secret-key-base` |
+| `DATABASE_URL` | Key Vault secret (if enabled) OR Container Apps secret | `database-connection-string` |
+| `SECRET_KEY_BASE` | Key Vault secret (if enabled) OR Container Apps secret | `phoenix-secret-key-base` |
 | `PHX_HOST` | Ingress FQDN | Container Apps default domain or custom domain |
 | `PORT` | Static | `4000` |
-| `OPENAI_API_KEY` | Key Vault secret (conditional) | `openai-api-key` |
-| `GOOGLE_CLIENT_ID` | Key Vault secret (prod) | `google-oauth-client-id` |
-| `GOOGLE_CLIENT_SECRET` | Key Vault secret (prod) | `google-oauth-client-secret` |
+| `OPENAI_API_KEY` | Key Vault secret (if enabled) OR Container Apps secret (conditional) | `openai-api-key` |
+| `GOOGLE_CLIENT_ID` | Key Vault secret (if enabled) OR Container Apps secret (prod) | `google-oauth-client-id` |
+| `GOOGLE_CLIENT_SECRET` | Key Vault secret (if enabled) OR Container Apps secret (prod) | `google-oauth-client-secret` |
+
+**Secret Source Determination**: Controlled by `use_key_vault` variable
 
 ### Health Probes
 
@@ -347,9 +382,9 @@ resource "azurerm_subnet" "postgres" {
 
 ## 7. Azure DNS and Custom Domain
 
-### DNS Zone (Conditional)
+### DNS Zone
 
-**Prerequisite**: DNS zones must exist before implementation or will be created
+**Implementation**: DNS zones created by Terraform as part of infrastructure deployment
 
 | Attribute | Baseline (Dev) | Enhanced (Production) |
 |-----------|---------------|---------------------|
@@ -472,10 +507,11 @@ resource "azurerm_subnet" "postgres" {
 | PostgreSQL | B_Standard_B1ms (1 vCore, 2 GB), 32 GB storage | 1 | $12-15 |
 | VNet | Standard | 1 | $2 |
 | Log Analytics | 1 GB/day ingestion, 30-day retention | 1 | $3-5 |
-| Key Vault | Standard, 100 operations/month | 1 | $1 |
-| **TOTAL** | | | **$23-33/month** |
+| Key Vault (optional) | Standard, 100 operations/month | 0-1 | $0-1 (if enabled) |
+| **TOTAL** | | | **$22-33/month** |
 
 **With auto-shutdown** (evenings, weekends): **$12-20/month** (50-70% savings)
+**With Key Vault disabled** (default): **$2-5/month savings**
 
 ### Production Environment
 
@@ -487,11 +523,12 @@ resource "azurerm_subnet" "postgres" {
 | NAT Gateway (optional) | Standard | 1 | $35-45 |
 | Log Analytics | 5 GB/day ingestion, 90-day retention | 1 | $15-25 |
 | Application Insights | 5 GB/day ingestion | 1 | $15-25 |
-| Key Vault | Premium, 1000 operations/month | 1 | $5 |
+| Key Vault (optional) | Premium, 1000 operations/month | 0-1 | $0-5 (if enabled) |
 | ACR | Standard | 1 | $6.50 |
-| **TOTAL** | | | **$368.50-467.50/month** |
+| **TOTAL** | | | **$363.50-467.50/month** |
 
-**With Azure Reservations** (1-year PostgreSQL commitment): **$290-400/month** (20-25% savings)
+**With Azure Reservations** (1-year PostgreSQL commitment): **$285-400/month** (20-25% savings)
+**With Key Vault disabled** (default): **$2-5/month savings**
 
 ---
 
@@ -513,6 +550,10 @@ resource "azurerm_subnet" "postgres" {
 
 ---
 
-**Document Version**: 1.0.0  
-**Last Updated**: January 15, 2026  
+**Document Version**: 1.1.0  
+**Last Updated**: January 20, 2026  
 **Related Documents**: plan.md, research.md, quickstart.md
+
+**Changelog**:
+- v1.1.0 (2026-01-20): Updated Key Vault to optional configuration, added secrets management strategy details, updated NSG rules documentation, clarified DNS zone creation
+- v1.0.0 (2026-01-15): Initial architecture specification

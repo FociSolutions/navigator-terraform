@@ -1,6 +1,6 @@
 # Navigator Azure Infrastructure Provisioning Guide
 
-**Date**: January 15, 2026  
+**Date**: January 15, 2026 (Updated: January 20, 2026)  
 **Branch**: `001-navigator-deploy`  
 **Purpose**: Step-by-step guide for provisioning Navigator infrastructure on Azure
 
@@ -209,9 +209,10 @@ terragrunt plan -out=tfplan
 
 **Important Checks**:
 - ✅ No resources will be destroyed (first deployment)
-- ✅ All secrets are stored in Key Vault (not hardcoded in Terraform)
+- ✅ All secrets are either stored in Key Vault (if enabled) OR directly in Container Apps secrets (if Key Vault disabled)
 - ✅ PostgreSQL uses private networking (delegated subnet, no public access)
-- ✅ Container Apps uses managed identity for Key Vault access
+- ✅ Container Apps uses managed identity for Key Vault access (if Key Vault enabled)
+- ✅ Verify `use_key_vault` setting matches your environment's requirements
 
 ### Step 6: Apply Configuration
 
@@ -230,8 +231,8 @@ terragrunt apply tfplan
 
 **Common Issues**:
 - **Subnet delegation conflict**: Ensure no existing resources in subnet before delegation
-- **Key Vault access denied**: Verify RBAC permissions (Terraform identity needs Secrets Officer role)
-- **DNS zone missing**: Create DNS zone manually if not using default Container Apps domain
+- **Key Vault access denied** (if `use_key_vault = true`): Verify RBAC permissions (Terraform identity needs Secrets Officer role)
+- **DNS zone missing**: DNS zones are created by Terraform (unless using default Container Apps domain)
 
 ### Step 7: Verify Deployment
 
@@ -277,7 +278,7 @@ terragrunt output
 - `container_app_fqdn`: Public URL for Navigator application
 - `container_app_identity_principal_id`: Managed identity ID (for RBAC assignments)
 - `postgres_fqdn`: PostgreSQL server FQDN (private, accessible from VNet only)
-- `key_vault_name`: Key Vault name (for secret management)
+- `key_vault_name`: Key Vault name (for secret management) - only if `use_key_vault = true`
 
 ---
 
@@ -319,6 +320,7 @@ inputs = {
   enable_application_insights = true
   enable_zone_redundancy      = true
   enable_auto_shutdown        = false
+  use_key_vault               = false  # Set to true if compliance requires
 
   # Domain
   domain_name = "valentine.cds-snc.ca"
@@ -331,6 +333,7 @@ inputs = {
 - Longer backup retention (14 days vs 7 days)
 - Application Insights enabled for monitoring
 - No auto-shutdown (24/7 availability)
+- Key Vault configurable based on compliance requirements
 
 ### Step 3: Initialize and Validate
 
@@ -361,7 +364,8 @@ terragrunt plan -out=tfplan
 - ✅ Application Insights enabled
 - ✅ Backup retention = 14 days
 - ✅ Lifecycle prevent_destroy = true for critical resources
-- ✅ Cost estimate reviewed (~$245-405/month)
+- ✅ `use_key_vault` setting matches compliance requirements
+- ✅ Cost estimate reviewed (~$240-405/month depending on Key Vault enablement)
 
 ### Step 6: Apply with Manual Approval
 
@@ -440,22 +444,24 @@ SELECT version();
 -- Expected: PostgreSQL 16.x on x86_64-pc-linux-gnu
 ```
 
-### 3. Key Vault Secrets
+### 3. Key Vault Secrets (if enabled)
 
-**List Secrets**:
+**List Secrets** (when `use_key_vault = true`):
 ```bash
 az keyvault secret list \
   --vault-name kv-dev-<random> \
   --query "[].name" -o table
 ```
 
-**Expected Secrets**:
+**Expected Secrets** (when Key Vault enabled):
 - `postgres-admin-password`
 - `database-connection-string`
 - `phoenix-secret-key-base`
 - `openai-api-key` (if OpenAI integration enabled)
 
-**Retrieve Secret** (for troubleshooting):
+**Note**: If `use_key_vault = false`, secrets are stored as Container Apps secrets (not in Key Vault).
+
+**Retrieve Secret** (for troubleshooting, only when Key Vault enabled):
 ```bash
 az keyvault secret show \
   --vault-name kv-dev-<random> \
@@ -587,7 +593,7 @@ az containerapp logs show \
 ```
 
 **Common Causes**:
-- **Missing environment variable**: Check Key Vault secret references
+- **Missing environment variable**: Check Key Vault secret references (if `use_key_vault = true`) or Container Apps secrets (if Key Vault disabled)
 - **Database connectivity**: Verify PostgreSQL network rules, connection string
 - **Image pull failure**: Verify ACR permissions or public ECR access
 
@@ -623,7 +629,7 @@ az network nsg rule list \
 **Solution**:
 - Verify Container Apps can reach PostgreSQL subnet (10.240.2.0/24)
 - Check NSG rules on both Container Apps and PostgreSQL subnets
-- Verify connection string in Key Vault includes `sslmode=require`
+- Verify connection string (in Key Vault if enabled, or Container Apps secrets) includes `sslmode=require`
 
 #### Issue 4: Trivy Security Scan Failures
 
@@ -658,7 +664,7 @@ terragrunt destroy
 - Container Apps Environment and Navigator app
 - PostgreSQL Flexible Server (⚠️ data loss)
 - VNet and subnets
-- Key Vault (soft-deleted, recoverable for 90 days)
+- Key Vault (soft-deleted if enabled, recoverable for 90 days)
 - NSGs and diagnostic settings
 
 **Preserved**:
@@ -711,6 +717,10 @@ After successful deployment:
 
 ---
 
-**Document Version**: 1.0.0  
-**Last Updated**: January 15, 2026  
+**Document Version**: 1.1.0  
+**Last Updated**: January 20, 2026  
 **Related Documents**: plan.md, architecture.md, research.md
+
+**Changelog**:
+- v1.1.0 (2026-01-20): Updated Key Vault references to reflect optional configuration, added use_key_vault variable documentation
+- v1.0.0 (2026-01-15): Initial provisioning guide

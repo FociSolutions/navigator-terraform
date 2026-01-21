@@ -983,6 +983,10 @@ resource "azurerm_network_security_rule" "allow_internet_outbound" {
 
 ## Azure Key Vault and Secrets Management
 
+**Note**: For Navigator infrastructure, Azure Key Vault is **OPTIONAL** and controlled by `use_key_vault` variable (defaults to false). This section documents Key Vault capabilities and best practices for when it is enabled.
+
+**Decision in plan.md**: Development environments use direct secret injection (simpler, faster, $0 cost). Production may enable Key Vault if GC compliance requires runtime audit trail or zero-downtime rotation.
+
 ### Key Vault Configuration
 
 **Access Model**: Use **Azure RBAC** (modern approach) instead of legacy access policies
@@ -998,9 +1002,10 @@ resource "azurerm_network_security_rule" "allow_internet_outbound" {
 4. **Grant least-privilege access**: Use specific RBAC roles (Key Vault Secrets User, not Administrator)
 5. **Private endpoint** (optional): Enhanced security for production environments
 
-**Terraform Configuration**:
+**Terraform Configuration** (when `use_key_vault = true`):
 ```hcl
 resource "azurerm_key_vault" "main" {
+  count                       = var.use_key_vault ? 1 : 0  # Conditional creation
   name                        = "kv-${var.environment}-${random_string.suffix.result}"
   location                    = azurerm_resource_group.main.location
   resource_group_name         = azurerm_resource_group.main.name
