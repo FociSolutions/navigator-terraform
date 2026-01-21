@@ -428,7 +428,9 @@ az containerapp logs show \
 
 **Connect to PostgreSQL** (from VNet-connected machine or bastion):
 ```bash
-psql "host=nav-dev-postgres.postgres.database.azure.com port=5432 dbname=navigator user=navadmin password=<PASSWORD> sslmode=require"
+psql "host=nav-dev-postgres.postgres.database.azure.com port=5432 dbname=navigator user=navadmin password=<PASSWORD> sslmode=disable"
+
+# Note: Use sslmode=require if postgres_require_ssl variable is set to true
 ```
 
 **Run Test Query**:
@@ -597,7 +599,7 @@ az network nsg rule list \
 **Solution**:
 - Verify Container Apps can reach PostgreSQL subnet (10.240.2.0/24)
 - Check NSG rules on both Container Apps and PostgreSQL subnets
-- Verify connection string (in Container Apps secrets) includes `sslmode=require`
+- Verify connection string (in Container Apps secrets) matches PostgreSQL TLS configuration (`sslmode=disable` by default, or `sslmode=require` if TLS enabled)
 
 #### Issue 4: Trivy Security Scan Failures
 

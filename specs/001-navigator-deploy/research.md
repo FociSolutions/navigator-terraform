@@ -88,7 +88,7 @@ The Azure Well-Architected Framework provides **5 pillars** that guide architect
 |-----------|-----------------|----------------|
 | **Network Isolation** | VNet integration | Container Apps subnet (10.240.1.0/24), PostgreSQL subnet (10.240.2.0/24) |
 | **Data Encryption** | At rest | AES-256 (Microsoft-managed keys) for PostgreSQL and Storage |
-| **Data Encryption** | In transit | TLS 1.2+ enforced for all connections (HTTPS ingress, PostgreSQL SSL) |
+| **Data Encryption** | In transit | TLS 1.2+ enforced for internet-facing traffic (HTTPS ingress); PostgreSQL TLS optional (disabled by default, network isolation via private endpoint provides primary security) |
 | **Secrets Management** | Container Apps secrets | Platform-encrypted secrets stored in Container Apps, accessible only to running app instances |
 | **Access Control** | Managed Identities | Container Apps system-assigned identity for ACR access (AcrPull role) |
 | **Network Security** | NSG rules | Container Apps: Allow 443 inbound, PostgreSQL: Allow 5432 from Container Apps subnet only |
@@ -634,10 +634,12 @@ resource "azurerm_postgresql_flexible_server" "main" {
 }
 ```
 
-**SSL/TLS Enforcement**:
-- **Enforce**: Set `require_secure_transport = on` server parameter
-- **Minimum TLS version**: TLS 1.2+ (set via `ssl_min_protocol_version` parameter)
-- **Client configuration**: Connection string must include `sslmode=require`
+**SSL/TLS Enforcement** (Optional):
+- **Default**: Set `require_secure_transport = off` to match AWS reference architecture
+- **Configurable**: Can be enabled via `var.postgres_require_ssl` variable for enhanced security
+- **When enabled**: Set `ssl_min_protocol_version = TLSv1.2` for minimum TLS 1.2+
+- **Client configuration**: Connection string uses `sslmode=disable` by default, or `sslmode=require` when TLS enabled
+- **Security Note**: Network isolation via private endpoint (delegated subnet) provides primary security control; TLS provides additional defense-in-depth when enabled
 
 **Managed Identity Authentication** (Optional):
 - PostgreSQL Flexible Server supports **Microsoft Entra ID (Azure AD) authentication**

@@ -169,7 +169,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Connection:
   - Connection string constructed from auto-generated credentials (stored in Terraform state)
   - Container Apps retrieves credentials from Container Apps secrets
-  - SSL/TLS enforcement: Required (TLS 1.2+)
+  - SSL/TLS enforcement: Optional (can be disabled to match AWS reference architecture)
+    - Network security: Database isolated via private endpoint (no internet access), so TLS provides defense-in-depth but not required for basic security
 - Performance:
   - Connection pooling: pgBouncer (built-in PostgreSQL Flexible Server feature, similar to AWS RDS Proxy concept)
   - Query performance insights: Enabled for production troubleshooting
@@ -241,7 +242,9 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Storage Account: Private endpoint for blob access (production, conditional)
 - TLS Enforcement:
   - Container Apps ingress: TLS 1.2+ only
-  - PostgreSQL connections: Require SSL/TLS (enforced at database level)
+  - PostgreSQL connections: Optional TLS (configurable via variable, disabled by default to match AWS reference architecture)
+    - Connection isolated via private endpoint in VNet (no public internet exposure)
+    - TLS provides additional encryption layer but AWS reference uses plain TCP
 
 **Identity and Access Management (IAM)**
 - Managed Identities:
@@ -297,7 +300,10 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Terraform State: Encryption enabled on Azure Storage Account (Microsoft-managed keys)
   - Container Apps secrets: Platform-encrypted by Azure (AES-256)
 - Encryption in Transit:
-  - All connections: TLS 1.2+ enforced (Container Apps ingress, PostgreSQL connections, Storage Account access)
+  - Internet-facing traffic: TLS 1.2+ enforced (Container Apps ingress, Storage Account access)
+  - PostgreSQL connections: TLS optional (configurable, disabled by default to match AWS reference)
+    - Network isolation provides primary security control (private endpoint, NSG restrictions)
+    - TLS provides defense-in-depth encryption layer when enabled
 
 **Security Scanning and Monitoring**
 - Microsoft Defender for Cloud (post-deployment manual configuration):
@@ -326,6 +332,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 | `postgres_sku` | Burstable B1ms | General Purpose D2s_v3 | General Purpose D4s_v3 |
 | `postgres_storage_gb` | 32 GB | 64 GB | 128 GB |
 | `postgres_ha_enabled` | false | true | true |
+| `postgres_require_ssl` | false | false | true (optional) |
 | `backup_retention_days` | 7 | 14 | 14 |
 | `enable_application_insights` | false | true | true |
 | `enable_auto_shutdown` | true (evenings/weekends) | false | false |

@@ -78,9 +78,9 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [X] T028 Configure PostgreSQL storage (var.postgres_storage_gb * 1024 MB, auto_grow_enabled=true for production) in terraform/azure/postgresql.tf
 - [X] T029 Configure PostgreSQL high availability using dynamic block (count based on var.postgres_ha_enabled, mode=ZoneRedundant, standby_availability_zone) in terraform/azure/postgresql.tf
 - [X] T030 Configure PostgreSQL backup (backup_retention_days from var.backup_retention_days, geo_redundant_backup_enabled=false) in terraform/azure/postgresql.tf
-- [X] T031 Configure PostgreSQL server parameters in terraform/azure/postgresql.tf: require_secure_transport=on, ssl_min_protocol_version=TLSv1.2, pgbouncer.enabled (conditional on production), log_statement (conditional on production)
+- [X] T031 Configure PostgreSQL server parameters in terraform/azure/postgresql.tf: require_secure_transport=off (default, configurable via var.postgres_require_ssl), ssl_min_protocol_version=TLSv1.2 (when TLS enabled), pgbouncer.enabled (conditional on production), log_statement (conditional on production)
 - [X] T032 Create azurerm_postgresql_flexible_server_database resource (name=navigator, charset=UTF8, collation=en_US.utf8) in terraform/azure/postgresql.tf
-- [X] T033 Create PostgreSQL connection string as local value in terraform/azure/postgresql.tf (format: postgresql://navadmin:PASSWORD@FQDN:5432/navigator?sslmode=require)
+- [X] T033 Create PostgreSQL connection string as local value in terraform/azure/postgresql.tf (format: postgresql://navadmin:PASSWORD@FQDN:5432/navigator?sslmode=${var.postgres_require_ssl ? "require" : "disable"})
 
 ### Container Apps & Container Registry
 

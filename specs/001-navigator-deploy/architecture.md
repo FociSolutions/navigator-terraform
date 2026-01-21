@@ -280,7 +280,7 @@ resource "azurerm_subnet" "postgres" {
 | **Geo-Redundant Backup** | Disabled | Optional (enabled at creation, cannot change) |
 | **Network** | Private (delegated subnet) | Private (delegated subnet) |
 | **Public Access** | Disabled | Disabled |
-| **SSL/TLS Enforcement** | Required (TLS 1.2+) | Required (TLS 1.2+) |
+| **SSL/TLS Enforcement** | Optional (disabled by default) | Optional (configurable via variable) |
 
 ### Authentication
 
@@ -303,8 +303,8 @@ resource "azurerm_subnet" "postgres" {
 | Parameter | Baseline (Dev) | Enhanced (Production) | Purpose |
 |-----------|---------------|---------------------|---------|
 | `pgbouncer.enabled` | `off` | `on` | Connection pooling |
-| `require_secure_transport` | `on` | `on` | Enforce SSL/TLS |
-| `ssl_min_protocol_version` | `TLSv1.2` | `TLSv1.2` | Minimum TLS version |
+| `require_secure_transport` | `off` | `off` (configurable) | Optional SSL/TLS enforcement |
+| `ssl_min_protocol_version` | `TLSv1.2` | `TLSv1.2` | Minimum TLS version (when enabled) |
 | `log_statement` | `none` | `ddl` | Log DDL statements for audit |
 | `log_min_duration_statement` | `-1` (disabled) | `1000` (1 second) | Log slow queries |
 
@@ -471,7 +471,7 @@ resource "azurerm_subnet" "postgres" {
 |------------|---------------|------------------|
 | **Data Residency** | Canada Central region | ✅ Compliant |
 | **Encryption at Rest** | AES-256 (Microsoft-managed keys) | ✅ Compliant |
-| **Encryption in Transit** | TLS 1.2+ enforced | ✅ Compliant |
+| **Encryption in Transit** | TLS 1.2+ enforced for internet-facing traffic; Optional for DB connections (network isolation provides security) | ✅ Compliant |
 | **Network Isolation** | Private VNet, no public PostgreSQL access | ✅ Compliant |
 | **Secrets Management** | Container Apps secrets (platform-encrypted) | ✅ Compliant |
 | **Event Logging** | Diagnostic settings to Log Analytics | ✅ Compliant |
