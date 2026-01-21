@@ -89,8 +89,8 @@ The Azure Well-Architected Framework provides **5 pillars** that guide architect
 | **Network Isolation** | VNet integration | Container Apps subnet (10.240.1.0/24), PostgreSQL subnet (10.240.2.0/24) |
 | **Data Encryption** | At rest | AES-256 (Microsoft-managed keys) for PostgreSQL and Storage |
 | **Data Encryption** | In transit | TLS 1.2+ enforced for all connections (HTTPS ingress, PostgreSQL SSL) |
-| **Secrets Management** | Azure Key Vault | Store database passwords, API keys, OAuth credentials |
-| **Access Control** | Managed Identities | Container Apps system-assigned identity with Key Vault Secrets User role |
+| **Secrets Management** | Container Apps secrets | Platform-encrypted secrets stored in Container Apps, accessible only to running app instances |
+| **Access Control** | Managed Identities | Container Apps system-assigned identity for ACR access (AcrPull role) |
 | **Network Security** | NSG rules | Container Apps: Allow 443 inbound, PostgreSQL: Allow 5432 from Container Apps subnet only |
 | **Private Connectivity** | Private endpoints | PostgreSQL private endpoint (no public internet access) |
 
@@ -99,7 +99,7 @@ The Azure Well-Architected Framework provides **5 pillars** that guide architect
 - **Deploy Container Apps in custom VNet** for network control and isolation
 - **Enable NSG flow logs** for traffic monitoring and threat detection
 - **Use managed identities** instead of connection strings for Azure service authentication
-- **Configure Key Vault with RBAC** (not legacy access policies) and enable soft delete + purge protection
+- **Use Container Apps secrets** for sensitive configuration (platform-encrypted, isolated per app instance)
 - **Implement defense in depth**: Multiple security layers (NSG, private endpoints, TLS, RBAC)
 
 **Security Compliance (Government of Canada)**:
@@ -247,7 +247,6 @@ Based on research, the following Azure Verified Modules are available and applic
 | **Container Apps Environment** | `avm-res-app-managedenvironment` | https://registry.terraform.io/modules/Azure/avm-res-app-managedenvironment/azurerm/latest | ❌ **NOT RECOMMENDED** - Simple single-resource pattern |
 | **PostgreSQL Flexible Server** | `avm-res-dbforpostgresql-flexibleserver` | https://registry.terraform.io/modules/Azure/avm-res-dbforpostgresql-flexibleserver/azurerm/latest | ❌ **NOT RECOMMENDED** - Direct `azurerm_postgresql_flexible_server` sufficient |
 | **Virtual Network** | `avm-res-network-virtualnetwork` | https://registry.terraform.io/modules/Azure/avm-res-network-virtualnetwork/azurerm/latest | ❌ **NOT RECOMMENDED** - VNet + subnets straightforward with direct resources |
-| **Key Vault** | `avm-res-keyvault-vault` | https://registry.terraform.io/modules/Azure/avm-res-keyvault-vault/azurerm/latest | ❌ **NOT RECOMMENDED** - RBAC configuration simpler with direct resources |
 | **Private Endpoint** | `avm-res-network-privateendpoint` | https://registry.terraform.io/modules/Azure/avm-res-network-privateendpoint/azurerm/latest | ❌ **NOT RECOMMENDED** - Single-resource module adds unnecessary abstraction |
 | **Application Insights** | `avm-res-insights-component` | https://registry.terraform.io/modules/Azure/avm-res-insights-component/azurerm/latest | ❌ **NOT RECOMMENDED** - Simple resource with minimal configuration |
 
@@ -275,7 +274,6 @@ While Azure Verified Modules (AVMs) provide Microsoft-supported, WAF-aligned mod
 | Container Apps Env | 0.4.x (pre-release) | ✅ **Direct Resource** | Uses `azapi` provider. Diagnostic settings not worth 50-var overhead. |
 | Container App | 0.4.x (pre-release) | ✅ **Direct Resource** | 100+ module variables for simple app config. No health probe benefit. |
 | PostgreSQL | 0.6.x (pre-release) | ✅ **Direct Resource** | Module doesn't simplify HA configuration. Pre-release version risk. |
-| Key Vault | 0.11.x (pre-release) | ✅ **Direct Resource** | Module doesn't automate secret creation. RBAC defaults reduce transparency. |
 | Container Registry | 0.4.x (pre-release) | ✅ **Direct Resource** | Geo-replication not needed. Vulnerability scanning not automated. |
 
 **Rationale for Direct Resources** (original analysis still valid):
@@ -322,7 +320,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   delegated_subnet_id    = azurerm_subnet.postgres.id
   private_dns_zone_id    = azurerm_private_dns_zone.postgres.id
   administrator_login    = "navadmin"
-  administrator_password = azurerm_key_vault_secret.postgres_password.value
+  administrator_password = random_password.postgres.result
   zone                   = var.availability_zone
   storage_mb             = var.postgres_storage_gb * 1024
   sku_name               = var.postgres_sku
@@ -399,40 +397,12 @@ module "postgresql" {
 | Security Control | Navigator Implementation |
 |-----------------|-------------------------|
 | **VNet Integration** | Deploy Container Apps Environment in custom VNet (10.240.0.0/16) |
-| **Managed Identity** | System-assigned managed identity with Key Vault Secrets User role |
+| **Managed Identity** | System-assigned managed identity for ACR image pull (AcrPull role) |
 | **Container Registry Authentication** | Use managed identity for ACR image pull (AcrPull role) |
-| **Secrets Management** | Reference Key Vault secrets via secret URI, inject as environment variables |
+| **Secrets Management** | Container Apps secrets for all sensitive configuration (platform-encrypted) |
 | **NSG Flow Logs** | Enable for Container Apps subnet (audit traffic, detect anomalies) |
 | **Azure Firewall (Optional)** | Use UDR to route outbound traffic through Azure Firewall for inspection |
 | **Application Gateway + WAF (Optional)** | Enhanced protection for production (OWASP rule sets) |
-
-**Managed Identity Integration**:
-```hcl
-# Container Apps managed identity
-resource "azurerm_container_app" "navigator" {
-  # ...
-  identity {
-    type = "SystemAssigned"
-  }
-}
-
-# Grant Key Vault access
-resource "azurerm_role_assignment" "container_app_kv_secrets_user" {
-  principal_id         = azurerm_container_app.navigator.identity[0].principal_id
-  role_definition_name = "Key Vault Secrets User"
-  scope                = azurerm_key_vault.main.id
-}
-
-# Reference Key Vault secret
-resource "azurerm_container_app" "navigator" {
-  # ...
-  secret {
-    name                = "database-connection-string"
-    key_vault_secret_id = azurerm_key_vault_secret.postgres_connection.id
-    identity            = "system"
-  }
-}
-```
 
 ### Deployment and Scaling Best Practices
 
@@ -549,7 +519,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   delegated_subnet_id    = azurerm_subnet.postgres.id
   private_dns_zone_id    = azurerm_private_dns_zone.postgres.id
   administrator_login    = "navadmin"
-  administrator_password = azurerm_key_vault_secret.postgres_password.value
+  administrator_password = random_password.postgres.result
   zone                   = "1"  # Primary availability zone
   storage_mb             = var.postgres_storage_gb * 1024
   sku_name               = var.postgres_sku  # e.g., "B_Standard_B1ms" or "GP_Standard_D2s_v3"
@@ -743,7 +713,7 @@ VNet: 10.240.0.0/16 (Canada Central)
 **Best Practices**:
 1. **Deny by default, permit by exception**: Create restrictive NSG rules
 2. **Apply NSGs to subnets** (not individual NICs) for centralized management
-3. **Use service tags**: Reference Azure services by tag (AzureKeyVault, CognitiveServices) instead of IP ranges
+3. **Use service tags**: Reference Azure services by tag (CognitiveServices, AzureMonitor) instead of IP ranges
 4. **Enable NSG flow logs**: Capture traffic for monitoring and threat detection
 5. **Document exceptions**: Trivy findings for unrestricted rules should include business justification
 
@@ -778,7 +748,6 @@ resource "azurerm_network_security_group" "container_apps" {
     destination_port_ranges    = ["443"]
     source_address_prefix      = "VirtualNetwork"
     destination_address_prefixes = [
-      "AzureKeyVault",
       "CognitiveServices",  # For OpenAI API
       "AzureMonitor",
       "AzureContainerRegistry"
@@ -861,7 +830,6 @@ resource "azurerm_network_security_group" "postgres" {
 
 **When to Use Private Endpoints**:
 - **PostgreSQL**: Highly recommended (eliminates public internet exposure)
-- **Key Vault**: Optional for production (enhanced security)
 - **Storage Account**: Optional for production (if used for user uploads)
 - **Container Apps**: Navigator is public web app - external ingress required
 
@@ -870,42 +838,6 @@ resource "azurerm_network_security_group" "postgres" {
 # Private endpoint for PostgreSQL (using VNet integration instead)
 # PostgreSQL Flexible Server uses delegated subnet, not private endpoint
 # Configuration shown in PostgreSQL section above
-
-# Private endpoint for Key Vault (optional, enhanced security)
-resource "azurerm_private_endpoint" "keyvault" {
-  count               = var.environment == "production" ? 1 : 0
-  name                = "pe-keyvault"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  subnet_id           = azurerm_subnet.postgres.id  # Reuse PostgreSQL subnet
-
-  private_service_connection {
-    name                           = "psc-keyvault"
-    private_connection_resource_id = azurerm_key_vault.main.id
-    subresource_names              = ["vault"]
-    is_manual_connection           = false
-  }
-
-  private_dns_zone_group {
-    name                 = "pdz-group-keyvault"
-    private_dns_zone_ids = [azurerm_private_dns_zone.keyvault[0].id]
-  }
-}
-
-# Private DNS zone for Key Vault
-resource "azurerm_private_dns_zone" "keyvault" {
-  count               = var.environment == "production" ? 1 : 0
-  name                = "privatelink.vaultcore.azure.net"
-  resource_group_name = azurerm_resource_group.main.name
-}
-
-resource "azurerm_private_dns_zone_virtual_network_link" "keyvault" {
-  count                 = var.environment == "production" ? 1 : 0
-  name                  = "keyvault-vnet-link"
-  private_dns_zone_name = azurerm_private_dns_zone.keyvault[0].name
-  virtual_network_id    = azurerm_virtual_network.main.id
-  resource_group_name   = azurerm_resource_group.main.name
-}
 ```
 
 **Benefits of Private Endpoints**:
@@ -958,7 +890,7 @@ resource "azurerm_container_app_custom_domain" "main" {
 | Finding | Severity | Navigator Justification | Suppression |
 |---------|----------|------------------------|-------------|
 | **AVD-AZU-0047**: NSG allows unrestricted inbound access | CRITICAL | Navigator is a **public web application** requiring internet access on port 443. This is intentional design. | Documented in `security.tf` |
-| **AVD-AZU-0051**: NSG allows unrestricted outbound access | HIGH | Outbound rules use **Azure service tags** (AzureKeyVault, CognitiveServices) for least-privilege access. Internet access (443) required for OpenAI API integration, controlled by `enable_outbound_internet` variable. | Documented in `security.tf` |
+| **AVD-AZU-0051**: NSG allows unrestricted outbound access | HIGH | Outbound rules use **Azure service tags** (CognitiveServices, AzureMonitor) for least-privilege access. Internet access (443) required for OpenAI API integration, controlled by `enable_outbound_internet` variable. | Documented in `security.tf` |
 
 **Suppression Example**:
 ```hcl
@@ -978,199 +910,6 @@ resource "azurerm_network_security_rule" "allow_internet_outbound" {
 - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
 - https://learn.microsoft.com/en-us/azure/private-link/private-link-overview
 - https://learn.microsoft.com/en-us/azure/security/fundamentals/network-best-practices
-
----
-
-## Azure Key Vault and Secrets Management
-
-**Note**: For Navigator infrastructure, Azure Key Vault is **OPTIONAL** and controlled by `use_key_vault` variable (defaults to false). This section documents Key Vault capabilities and best practices for when it is enabled.
-
-**Decision in plan.md**: Development environments use direct secret injection (simpler, faster, $0 cost). Production may enable Key Vault if GC compliance requires runtime audit trail or zero-downtime rotation.
-
-### Key Vault Configuration
-
-**Access Model**: Use **Azure RBAC** (modern approach) instead of legacy access policies
-
-**SKU Selection**:
-- **Standard**: Software-protected keys, sufficient for most workloads
-- **Premium**: HSM-backed keys, required for compliance with cryptographic standards
-
-**Best Practices**:
-1. **Enable soft delete**: 90-day retention for accidental deletion recovery (mandatory in Azure)
-2. **Enable purge protection**: Prevent permanent deletion during retention period (production only)
-3. **Use managed identities**: Eliminate connection strings and passwords
-4. **Grant least-privilege access**: Use specific RBAC roles (Key Vault Secrets User, not Administrator)
-5. **Private endpoint** (optional): Enhanced security for production environments
-
-**Terraform Configuration** (when `use_key_vault = true`):
-```hcl
-resource "azurerm_key_vault" "main" {
-  count                       = var.use_key_vault ? 1 : 0  # Conditional creation
-  name                        = "kv-${var.environment}-${random_string.suffix.result}"
-  location                    = azurerm_resource_group.main.location
-  resource_group_name         = azurerm_resource_group.main.name
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  sku_name                    = var.environment == "production" ? "premium" : "standard"
-  soft_delete_retention_days  = 90
-  purge_protection_enabled    = var.environment == "production" ? true : false
-  enable_rbac_authorization   = true  # Use Azure RBAC instead of access policies
-
-  network_acls {
-    default_action = var.environment == "production" ? "Deny" : "Allow"
-    bypass         = "AzureServices"
-  }
-
-  lifecycle {
-    prevent_destroy = var.environment == "production" ? true : false
-  }
-}
-
-# Store PostgreSQL password in Key Vault
-resource "azurerm_key_vault_secret" "postgres_password" {
-  name         = "postgres-admin-password"
-  value        = random_password.postgres.result
-  key_vault_id = azurerm_key_vault.main.id
-
-  depends_on = [azurerm_role_assignment.terraform_kv_secrets_officer]
-}
-
-# Store database connection string
-resource "azurerm_key_vault_secret" "postgres_connection_string" {
-  name         = "database-connection-string"
-  value        = "postgresql://${azurerm_postgresql_flexible_server.main.administrator_login}:${random_password.postgres.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${azurerm_postgresql_flexible_server_database.main.name}?sslmode=require"
-  key_vault_id = azurerm_key_vault.main.id
-
-  depends_on = [
-    azurerm_postgresql_flexible_server.main,
-    azurerm_role_assignment.terraform_kv_secrets_officer
-  ]
-}
-
-# Store Phoenix SECRET_KEY_BASE (generated, not from docker-compose.yml)
-resource "random_password" "phoenix_secret_key_base" {
-  length  = 64
-  special = false
-}
-
-resource "azurerm_key_vault_secret" "phoenix_secret_key_base" {
-  name         = "phoenix-secret-key-base"
-  value        = random_password.phoenix_secret_key_base.result
-  key_vault_id = azurerm_key_vault.main.id
-
-  depends_on = [azurerm_role_assignment.terraform_kv_secrets_officer]
-}
-
-# Store OpenAI API key (if using OpenAI integration)
-resource "azurerm_key_vault_secret" "openai_api_key" {
-  count        = var.openai_api_key != "" ? 1 : 0
-  name         = "openai-api-key"
-  value        = var.openai_api_key
-  key_vault_id = azurerm_key_vault.main.id
-
-  depends_on = [azurerm_role_assignment.terraform_kv_secrets_officer]
-}
-```
-
-### RBAC Roles for Key Vault
-
-| Role | Purpose | Assigned To | Permissions |
-|------|---------|------------|-------------|
-| **Key Vault Secrets Officer** | Manage secrets (create, update, delete) | Terraform deployment identity, Ops team | Full secret management |
-| **Key Vault Secrets User** | Read secrets only | Container Apps managed identity | Read secrets (no write) |
-| **Key Vault Administrator** | Full Key Vault management | Ops team (break-glass) | All permissions |
-
-**RBAC Assignment Example**:
-```hcl
-# Current Azure CLI user (for Terraform deployment)
-data "azurerm_client_config" "current" {}
-
-# Grant Terraform identity Secrets Officer role
-resource "azurerm_role_assignment" "terraform_kv_secrets_officer" {
-  principal_id         = data.azurerm_client_config.current.object_id
-  role_definition_name = "Key Vault Secrets Officer"
-  scope                = azurerm_key_vault.main.id
-}
-
-# Grant Container Apps managed identity Secrets User role
-resource "azurerm_role_assignment" "container_app_kv_secrets_user" {
-  principal_id         = azurerm_container_app.navigator.identity[0].principal_id
-  role_definition_name = "Key Vault Secrets User"
-  scope                = azurerm_key_vault.main.id
-}
-```
-
-### Container Apps Secret Integration
-
-**Method 1: Direct Secret Value** (NOT recommended for production):
-```hcl
-resource "azurerm_container_app" "navigator" {
-  # ...
-  secret {
-    name  = "database-password"
-    value = random_password.postgres.result  # NOT RECOMMENDED - visible in state
-  }
-}
-```
-
-**Method 2: Key Vault Reference** (RECOMMENDED):
-```hcl
-resource "azurerm_container_app" "navigator" {
-  # ...
-  identity {
-    type = "SystemAssigned"
-  }
-
-  secret {
-    name                = "database-connection-string"
-    key_vault_secret_id = azurerm_key_vault_secret.postgres_connection_string.id
-    identity            = "system"
-  }
-
-  secret {
-    name                = "phoenix-secret-key-base"
-    key_vault_secret_id = azurerm_key_vault_secret.phoenix_secret_key_base.id
-    identity            = "system"
-  }
-
-  template {
-    container {
-      name  = "navigator"
-      image = var.container_image
-
-      env {
-        name        = "DATABASE_URL"
-        secret_name = "database-connection-string"
-      }
-
-      env {
-        name        = "SECRET_KEY_BASE"
-        secret_name = "phoenix-secret-key-base"
-      }
-    }
-  }
-
-  depends_on = [
-    azurerm_role_assignment.container_app_kv_secrets_user
-  ]
-}
-```
-
-**Secret Rotation**:
-- **Automatic rotation**: Container Apps checks Key Vault for updated secrets every 30 minutes
-- **Manual trigger**: Restart existing revisions to pick up new secret values immediately
-- **Version handling**:
-  - Key Vault URI **without version** (e.g., `https://myvault.vault.azure.net/secrets/mysecret`) → Uses latest version, auto-updates
-  - Key Vault URI **with version** (e.g., `https://myvault.vault.azure.net/secrets/mysecret/abc123`) → Pinned version, no auto-update
-
-**UDR with Azure Firewall Note**:
-If using User-Defined Routes (UDR) with Azure Firewall, add the following to firewall allowlist:
-- **Service tag**: `AzureKeyVault`
-- **FQDN**: `login.microsoft.com` (for managed identity authentication)
-
-### References
-- https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets
-- https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide
-- https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/security#key-vault-secrets-user
 
 ---
 
@@ -1215,10 +954,6 @@ provider "azurerm" {
   features {
     resource_group {
       prevent_deletion_if_contains_resources = var.environment == "production" ? true : false
-    }
-    key_vault {
-      purge_soft_delete_on_destroy    = var.environment != "production"
-      recover_soft_deleted_key_vaults = true
     }
   }
 }

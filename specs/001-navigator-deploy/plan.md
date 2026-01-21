@@ -7,7 +7,7 @@
 
 ## Summary
 
-Deploy the Navigator threat modeling application (Elixir/Phoenix) to Azure with minimal infrastructure suitable for 50-100 concurrent users. The architecture uses Azure Container Apps for serverless container hosting, Azure Database for PostgreSQL Flexible Server for persistence, and optional Azure Key Vault for secrets management. This design mirrors the existing AWS architecture (ECS Fargate + Aurora PostgreSQL) while leveraging Azure-managed services to minimize operational overhead. Initial deployment targets development/staging environments with the ability to scale to production through configuration-driven environment promotion using Terragrunt orchestration.
+Deploy the Navigator threat modeling application (Elixir/Phoenix) to Azure with minimal infrastructure suitable for 50-100 concurrent users. The architecture uses Azure Container Apps for serverless container hosting, Azure Database for PostgreSQL Flexible Server for persistence, and Container Apps secrets for configuration management. This design mirrors the existing AWS architecture (ECS Fargate + Aurora PostgreSQL) while leveraging Azure-managed services to minimize operational overhead. Initial deployment targets development/staging environments with the ability to scale to production through configuration-driven environment promotion using Terragrunt orchestration.
 
 **Prerequisites**: This plan assumes baseline Azure infrastructure (resource groups) and Terraform state management infrastructure (Azure Storage Account for remote backend, state locking) are already provisioned and configured.
 
@@ -46,7 +46,7 @@ Before implementing this plan, ensure the following baseline infrastructure exis
 **Module Versions**: Direct resources only - no modules used in this implementation (follows "Prefer Resource Simplicity" principle v3.0.0). See [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive analysis of Azure Verified Modules decision.  
 **State Backend**: Azure Blob Storage with state locking (azurerm backend)  
 **Environment Strategy**: Terragrunt with directory-based environments (terraform/env/{dev,staging,production}) referencing shared module (terraform/azure/)  
-**Secrets Management**: Optional Azure Key Vault (configurable per environment via `use_key_vault` variable, defaults to false)  
+**Secrets Management**: Container Apps secrets (direct injection from Terraform state)  
 **Deployment Method**: Manual deployment using Terragrunt (CI/CD out of scope, may be added later)  
 **Testing**: terraform validate, terraform plan at tier boundaries  
 **Security Scanning**: Trivy for infrastructure security scanning  
@@ -61,14 +61,13 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 ### Cloud Architecture Principles
 
 **1. Prefer Managed Services** ✅ (consolidated from "Favor Managed Services" + "Enforce Cloud Service Hierarchy" in v3.0.0)  
-- Uses Azure Container Apps (fully managed serverless containers)
+- Uses Azure Container Apps (fully managed serverless containers with built-in secrets management)
 - Uses Azure Database for PostgreSQL Flexible Server (managed database with automated backups, patching)
-- Uses optional Azure Key Vault (managed secrets service)
 - Uses Azure Monitor + Application Insights (managed observability)
 - Avoids self-managed VMs, container orchestration clusters, or database installations
 
 **2. Design for Simplicity** ✅  
-- Baseline (Dev): Single-zone deployment, Basic/Burstable tiers, minimal networking, Key Vault disabled by default
+- Baseline (Dev): Single-zone deployment, Basic/Burstable tiers, minimal networking, direct Container Apps secrets
 - Enhanced (Production): Zone-redundant deployment, Standard/General Purpose tiers, essential features only
 - No multi-region complexity, no service mesh, no unnecessary abstractions
 
@@ -78,7 +77,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Target availability: 99.9% for internal tools (appropriate for use case)
 
 **4. Optimize for Cost** ✅  
-- Baseline (Dev): Smallest SKUs (Container Apps Consumption plan, PostgreSQL Burstable B1ms), auto-shutdown schedules, Key Vault disabled (~$2-5/month savings)
+- Baseline (Dev): Smallest SKUs (Container Apps Consumption plan, PostgreSQL Burstable B1ms), auto-shutdown schedules, direct secrets management (no additional service costs)
 - Enhanced (Production): Right-sized Standard/General Purpose tiers, Azure reservations for predictable workloads
 - Monthly operating cost target: $50-150/month (dev), scalable to production needs
 
@@ -88,7 +87,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Uses direct azurerm resource blocks exclusively (azurerm_container_app, azurerm_postgresql_flexible_server, azurerm_virtual_network)
 - No modules used in this implementation - all resources defined directly for maximum transparency
 - **Azure Verified Modules (AVM) Re-Evaluation** (January 16, 2026): Comprehensive analysis confirmed direct resources remain optimal for Navigator's scale. See [avm-reevaluation.md](./avm-reevaluation.md) for:
-  - Component-by-component cost-benefit analysis (VNet, Container Apps, PostgreSQL, Key Vault, ACR)
+  - Component-by-component cost-benefit analysis (VNet, Container Apps, PostgreSQL, ACR)
   - Quantitative metrics: Direct resources save 12-23 hours initial development, 2-3x faster debugging, 4-8x faster upgrades
   - Pre-release risk assessment: ALL AVM modules < 1.0.0 with breaking changes expected
   - GC compliance audit trail: Direct resources provide better security transparency
@@ -104,8 +103,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 **3. Manage Secrets Securely** ✅  
 - Auto-generated secrets created using Terraform `random_password` resource (PostgreSQL passwords, SECRET_KEY_BASE)
 - Injected secrets passed as Terraform input variables during manual deployment
-- Optional Azure Key Vault for centralized secret management (configurable per environment)
-- When Key Vault enabled: Uses Azure Managed Identities for Container Apps to access secrets (no stored credentials)
+- Container Apps secrets store all sensitive configuration (encrypted by Azure platform)
+- Uses Azure Managed Identities for Container Apps to access Azure resources (no stored credentials)
 - Never commits secrets in code or .tfvars files (gitignored)
 
 ### Implementation Approaches
@@ -113,7 +112,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 **Configuration-Driven Environment Strategy** ✅  
 - Shared Terraform module under `terraform/azure/` containing all infrastructure definitions
 - Terragrunt configuration in `terraform/env/{dev,staging,production}/terragrunt.hcl` referencing shared module
-- Environment-specific inputs control SKUs, scaling limits, feature flags (including `use_key_vault`), backup retention
+- Environment-specific inputs control SKUs, scaling limits, feature flags, backup retention
 - Terragrunt auto-generates separate Azure Storage Account backends per environment
 - Deployment strategy: validate in dev → promote to staging → deploy to production
 
@@ -168,8 +167,8 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Private endpoint in VNet (database not publicly accessible)
   - Access restricted to Container Apps subnet only via VNet integration
 - Connection:
-  - Connection string constructed from auto-generated credentials (stored in Terraform state or optional Key Vault)
-  - Container Apps retrieves credentials from Terraform-managed secrets
+  - Connection string constructed from auto-generated credentials (stored in Terraform state)
+  - Container Apps retrieves credentials from Container Apps secrets
   - SSL/TLS enforcement: Required (TLS 1.2+)
 - Performance:
   - Connection pooling: pgBouncer (built-in PostgreSQL Flexible Server feature, similar to AWS RDS Proxy concept)
@@ -193,15 +192,15 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - PostgreSQL Subnet: 10.240.2.0/24 (delegated to Microsoft.DBforPostgreSQL/flexibleServers for private endpoint)
   - Application Gateway Subnet: 10.240.3.0/24 (for future ALB-equivalent setup if needed)
 - DNS: Azure-provided DNS (168.63.129.16) for private endpoint resolution
-- Service Endpoints: Microsoft.Storage (if using Storage Account), Microsoft.KeyVault (if using Key Vault)
+- Service Endpoints: Microsoft.Storage (if using Storage Account for user uploads)
 
 **Network Security Groups (NSGs)**
 - Container Apps NSG:
   - Inbound: Allow HTTPS (443) from internet (public web application - unrestricted source is intentional and documented)
   - Outbound: Segregated by destination for least-privilege access:
-    - Azure services: Allow 443 to AzureKeyVault (conditional - only if `use_key_vault = true`), CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
+    - Azure services: Allow 443 to CognitiveServices, AzureMonitor, AzureContainerRegistry (service tags)
     - Internet (conditional): Allow 443 to internet for OpenAI API integration (controlled by `enable_outbound_internet` variable; default: true for dev/staging, configurable for production based on security policy)
-    - PostgreSQL: Allow 5432 to PostgreSQL subnet (existing rule)
+    - PostgreSQL: Allow 5432 to PostgreSQL subnet
 - PostgreSQL NSG:
   - Inbound: Allow 5432 from Container Apps subnet only
   - Outbound: Deny all (database does not initiate outbound connections)
@@ -219,7 +218,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - A Record: Points to Container Apps environment default domain or Application Gateway public IP
 - TLS Certificates:
   - Baseline (Dev): Container Apps Managed Certificates (free, automatic renewal)
-  - Enhanced (Production): Azure Key Vault certificates or App Gateway Managed Certificates
+  - Enhanced (Production): App Gateway Managed Certificates or Container Apps Managed Certificates
   - Validation: DNS validation (automated via Azure DNS integration)
   - Enforcement: HTTPS-only ingress, HTTP redirects to HTTPS
 
@@ -234,27 +233,22 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Network Security Groups (NSGs):
   - Container Apps NSG:
     - Inbound: 443 from internet (unrestricted for public web application - intentional design decision, documented in terraform/azure/security.tf)
-    - Outbound: Segregated rule set using service tags for Azure services (AzureKeyVault - conditional, CognitiveServices, AzureMonitor, AzureContainerRegistry) and conditional internet access (controlled by `enable_outbound_internet` variable)
+    - Outbound: Segregated rule set using service tags for Azure services (CognitiveServices, AzureMonitor, AzureContainerRegistry) and conditional internet access (controlled by `enable_outbound_internet` variable)
   - PostgreSQL NSG: Inbound 5432 from Container Apps subnet only, outbound deny all
   - Security Scanning: Trivy findings AVD-AZU-0047 (unrestricted inbound) and AVD-AZU-0051 (unrestricted outbound) suppressed with business justifications in IaC code
 - Private Endpoints:
   - PostgreSQL: Private endpoint in VNet (no public internet access)
-  - Key Vault (conditional): Private endpoint for enhanced security - only if `use_key_vault = true` AND production environment
   - Storage Account: Private endpoint for blob access (production, conditional)
 - TLS Enforcement:
   - Container Apps ingress: TLS 1.2+ only
   - PostgreSQL connections: Require SSL/TLS (enforced at database level)
-  - Key Vault access (conditional): HTTPS only - if `use_key_vault = true`
 
 **Identity and Access Management (IAM)**
 - Managed Identities:
   - Container Apps: System-assigned managed identity
-  - Key Vault access (conditional): If `use_key_vault = true`, assign Secrets User role to Container Apps identity
   - ACR Integration: Managed identity for pulling container images (AcrPull role)
 - Role-Based Access Control (RBAC):
   - Container Apps Contributor: Operators deploy app revisions, view logs
-  - Key Vault Secrets Officer (conditional): Operators manage secrets - only if `use_key_vault = true`
-  - Key Vault Secrets User (conditional): Container Apps read-only secret access - only if `use_key_vault = true`
   - PostgreSQL Administrator: Database schema management
   - PostgreSQL User: Application runtime access (connection string)
   - Terraform State Storage: Storage Blob Data Contributor (operators read/write state during deployment)
@@ -265,7 +259,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 
 **Secrets Management**
 
-**Strategy**: Azure Key Vault is **OPTIONAL** - configurable per environment via `use_key_vault` variable
+**Strategy**: Direct Container Apps secrets (no Key Vault required)
 
 **Secret Categories**:
 
@@ -281,41 +275,34 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
    - Microsoft OAuth credentials (if using Azure AD B2C, conditional)
    - Storage: Passed as Terraform input variables during manual deployment
 
-**Key Vault Configuration** (when enabled via `use_key_vault = true`):
-- SKU: Standard (dev/staging) or Premium (production)
-- Secrets stored: All auto-generated and injected secrets listed above
-- Access control: Azure RBAC (Container Apps Managed Identity → Secrets User role)
-- Container Apps: References secrets via Key Vault URI (secrets injected as environment variables at runtime)
-- Secret rotation: Update Key Vault secret → Container Apps picks up on restart
-- Private endpoint: Optional for production (no public internet access)
-- Soft delete: 90-day retention for accidental deletion recovery
-- Purge protection: Enabled for production (prevents permanent deletion)
-
-**Direct Secret Injection** (when `use_key_vault = false`, default):
+**Container Apps Secret Injection**:
 - Auto-generated secrets: Retrieved from Terraform state, injected into Container Apps secrets
-- Injected secrets: Passed as Terraform input variables, injected into Container Apps secrets
-- Container Apps: Secrets defined as Container Apps secrets (referenced by environment variables)
-- Secret rotation: Re-run `terragrunt apply` to update secrets
+- Injected secrets: Passed as Terraform input variables, stored as Container Apps secrets
+- Environment variables: Reference Container Apps secrets (e.g., `secretRef: "db-conn-str"`)
+- Secret rotation: Update Terraform variables → re-run `terragrunt apply` → Container Apps restarts with new secrets
+- Container Apps secrets: Encrypted by Azure platform, accessible only to running app instances
 
-**Recommendation**:
-- Development: `use_key_vault = false` (simpler, faster iteration, $0 cost)
-- Production: `use_key_vault = true` (if GC compliance requires runtime audit trail or zero-downtime rotation)
+**Security Considerations**:
+- State backend: Encrypted at rest with Microsoft-managed keys, RBAC-controlled access (Storage Blob Data Contributor)
+- Container Apps secrets: Platform-encrypted, isolated per app instance
+- Future enhancement: Terraform 1.10+ ephemeral values will prevent secrets appearing in plan output
+- Terraform state access: Limited to deployment identities, audit logged via Azure Monitor
+- No secrets in code: All sensitive values parameterized as Terraform variables
+- State file security: Stored in Azure Blob Storage with versioning, soft delete, and private network access (production)
 
 **Data Encryption**
 - Encryption at Rest:
   - PostgreSQL: Automatic encryption with Microsoft-managed keys (platform default)
   - Storage Account: AES-256 encryption with Microsoft-managed keys
   - Terraform State: Encryption enabled on Azure Storage Account (Microsoft-managed keys)
-  - Key Vault (conditional): If enabled, uses Microsoft-managed keys (Standard SKU) or HSM-backed keys (Premium SKU)
+  - Container Apps secrets: Platform-encrypted by Azure (AES-256)
 - Encryption in Transit:
-  - All connections: TLS 1.2+ enforced (Container Apps ingress, PostgreSQL connections)
-  - Key Vault access (conditional): HTTPS only - if `use_key_vault = true`
+  - All connections: TLS 1.2+ enforced (Container Apps ingress, PostgreSQL connections, Storage Account access)
 
 **Security Scanning and Monitoring**
 - Microsoft Defender for Cloud (post-deployment manual configuration):
   - Defender for Containers: Vulnerability scanning for ACR images, runtime threat detection
   - Defender for Databases: PostgreSQL threat detection, vulnerability assessments
-  - Defender for Key Vault (conditional): Unusual access pattern detection - only if `use_key_vault = true`
 - Trivy: Infrastructure-as-code security scanning during Terraform development and container image vulnerability scanning
 - Azure Policy: Enforce compliance (require encryption, private endpoints, TLS versions)
 
@@ -340,7 +327,6 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 | `postgres_storage_gb` | 32 GB | 64 GB | 128 GB |
 | `postgres_ha_enabled` | false | true | true |
 | `backup_retention_days` | 7 | 14 | 14 |
-| `use_key_vault` | false | false | false (default, enable if compliance requires) |
 | `enable_application_insights` | false | true | true |
 | `enable_auto_shutdown` | true (evenings/weekends) | false | false |
 | `enable_zone_redundancy` | false | true | true |
@@ -350,7 +336,6 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 | `create_azure_ad_b2c` | true | true | false |
 
 **Conditional Resource Creation** (using Terraform `count` expressions in shared module):
-- `count = var.use_key_vault ? 1 : 0` - Azure Key Vault for centralized secret management (optional, defaults to false)
 - `count = var.enable_application_insights ? 1 : 0` - Application Insights for production monitoring
 - `count = var.enable_auto_shutdown ? 1 : 0` - Auto-shutdown schedules for dev cost savings
 - `count = var.create_google_auth ? 1 : 0` - Google OAuth integration for production
@@ -413,7 +398,7 @@ terragrunt apply   # Deploy to production (requires explicit approval)
 - Managed Certificates (free, automatic)
 - Basic monitoring (Container Apps default metrics, no Application Insights)
 - Auto-shutdown schedules (evenings, weekends to reduce cost)
-- Key Vault disabled by default (~$2-5/month savings)
+- Direct Container Apps secrets (no Key Vault overhead)
 
 **Enhanced Complexity** (Staging/Production Environments)
 
@@ -433,7 +418,6 @@ terragrunt apply   # Deploy to production (requires explicit approval)
 - Automated backups with 14-day retention, point-in-time restore
 - Comprehensive monitoring, alerting, and log analytics
 - Optional Application Gateway with WAF for enhanced security (if required by compliance)
-- Optional Key Vault for centralized secret management (if required by compliance)
 
 **Complexity Progression Path**:
 - Start with Baseline for initial deployment (minimize cost, rapid iteration)
@@ -539,12 +523,11 @@ terraform/
 ├── azure/                          # Shared Terraform module (infrastructure definitions)
 │   ├── versions.tf                 # Terraform and provider version constraints
 │   ├── provider.tf                 # Azure provider configuration
-│   ├── variables.tf                # Input variable declarations (includes use_key_vault flag)
+│   ├── variables.tf                # Input variable declarations
 │   ├── outputs.tf                  # Output value declarations
 │   ├── vnet.tf                     # Virtual Network, subnets, NSGs
 │   ├── container-apps.tf           # Container Apps Environment and Navigator app
 │   ├── postgresql.tf               # PostgreSQL Flexible Server (includes random_password for credentials)
-│   ├── keyvault.tf                 # Key Vault (conditional: count = var.use_key_vault ? 1 : 0)
 │   ├── dns.tf                      # Azure DNS zone and records
 │   ├── monitoring.tf               # Application Insights, Log Analytics (conditional)
 │   ├── identity.tf                 # Managed Identities, RBAC role assignments
@@ -558,9 +541,9 @@ terraform/
 │
 └── env/                            # Environment-specific configurations (Terragrunt)
     ├── dev/
-    │   └── terragrunt.hcl          # Dev environment configuration (use_key_vault = false)
+    │   └── terragrunt.hcl          # Dev environment configuration
     └── production/
-        └── terragrunt.hcl          # Production environment configuration (use_key_vault = false by default)
+        └── terragrunt.hcl          # Production environment configuration
 
 .specify/                           # Project management (existing)
 ├── memory/
@@ -594,7 +577,7 @@ README.md                           # Root project documentation
 
 **Terragrunt Configuration**:
 - `source = "../..//azure"`: Reference shared module from environment directory
-- `inputs {}`: Environment-specific parameters (SKUs, scaling, feature flags including `use_key_vault`, domain names)
+- `inputs {}`: Environment-specific parameters (SKUs, scaling, feature flags, domain names)
 - `remote_state`: Auto-generate Azure Storage backend configuration
 - `dependencies`: Manage deployment order if needed (network before compute)
 
@@ -617,7 +600,7 @@ README.md                           # Root project documentation
 - Azure Container Apps environment and Navigator application
 - Azure Database for PostgreSQL Flexible Server
 - Virtual Network, subnets, and Network Security Groups
-- Optional Azure Key Vault for secrets management (configurable per environment)
+- Container Apps secrets for sensitive configuration (no Key Vault required)
 - Managed Identities and RBAC role assignments
 - DNS configuration (Azure DNS zone)
 - Monitoring and logging (Application Insights, Log Analytics)

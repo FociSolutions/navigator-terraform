@@ -30,7 +30,6 @@
 | Container App | `Azure/avm-res-app-containerapp/azurerm` | 0.4.x (pre-release) | ⚠️ Pre-release | lonegunmanb |
 | PostgreSQL Flexible Server | `Azure/avm-res-dbforpostgresql-flexibleserver/azurerm` | 0.6.x (pre-release) | ⚠️ Pre-release | Microsoft (no primary owner listed) |
 | Virtual Network | `Azure/avm-res-network-virtualnetwork/azurerm` | 0.7.x (pre-release) | ⚠️ Pre-release | jaredfholgate |
-| Key Vault | `Azure/avm-res-keyvault-vault/azurerm` | 0.11.x (pre-release) | ⚠️ Pre-release | matt-FFFFFF |
 | Container Registry (ACR) | `Azure/avm-res-containerregistry-registry/azurerm` | 0.4.x (pre-release) | ⚠️ Pre-release | Akashc0807 |
 
 **Critical Observation**: ALL modules are pre-release (`< 1.0.0`). Per AVM documentation:
@@ -190,7 +189,7 @@ resource "azurerm_container_app_environment" "this" {
 Navigator requires:
 - HTTP health probes on `/` endpoint
 - Min replicas: 0 (dev) or 1 (prod), Max replicas: 2 (dev) or 10 (prod)
-- Secrets: PostgreSQL connection string, Phoenix SECRET_KEY_BASE (from Key Vault)
+- Secrets: PostgreSQL connection string, Phoenix SECRET_KEY_BASE (stored in Container Apps secrets)
 
 **Direct Resource Approach**:
 ```hcl
@@ -225,7 +224,7 @@ resource "azurerm_container_app" "navigator" {
 
   secret {
     name  = "database-url"
-    value = azurerm_key_vault_secret.database_url.value
+    value = var.database_url  # From Terraform variable
   }
 
   ingress {
@@ -248,7 +247,7 @@ resource "azurerm_container_app" "navigator" {
 #### **Concrete Benefits**: ❌ **NONE**
 - **Health probe templates**: Direct resource requires same 4 lines (`transport`, `port`, `path`, `interval_seconds`)
 - **Autoscaling rule validation**: No input validation beyond what `azurerm` provider already does
-- **Secret integration**: Module doesn't integrate with Key Vault automatically - you still reference secrets manually
+- **Secret integration**: Module doesn't simplify secret management - you still reference secrets manually in Container Apps configuration
 
 #### **Costs**:
 - **Learning curve**: Module uses `azapi` provider. You must learn AzAPI resource structure (JSON-based API calls) instead of HCL-native `azurerm` resources.
@@ -336,83 +335,7 @@ resource "azurerm_postgresql_flexible_server" "this" {
 
 ---
 
-### 2.5 Key Vault (`avm-res-keyvault-vault`)
-
-#### Claimed Benefits:
-- RBAC-based access policy defaults
-- Soft delete + purge protection enforcement
-- Private endpoint automation
-- Secret rotation policies
-
-#### **Reality Check**:
-
-Navigator requires:
-- Store 4 secrets: `database-url`, `secret-key-base`, `openai-api-key`, OAuth credentials
-- RBAC: Container Apps managed identity = "Key Vault Secrets User", Ops team = "Key Vault Secrets Officer"
-- Soft delete enabled (90-day retention)
-- **Dev**: Public network access allowed (developers access via Azure CLI)
-- **Prod**: Private endpoint in VNet
-
-**Direct Resource Approach**:
-```hcl
-resource "azurerm_key_vault" "this" {
-  name                = "kv-nav-${var.environment}-${random_id.suffix.hex}"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-
-  sku_name = "standard"
-
-  enable_rbac_authorization       = true
-  soft_delete_retention_days      = 90
-  purge_protection_enabled        = var.environment == "production"
-  public_network_access_enabled   = var.environment != "production"
-
-  network_acls {
-    bypass         = "AzureServices"
-    default_action = var.environment == "production" ? "Deny" : "Allow"
-  }
-}
-
-resource "azurerm_role_assignment" "container_app_secrets_user" {
-  scope                = azurerm_key_vault.this.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_container_app.navigator.identity[0].principal_id
-}
-```
-**Lines of code**: ~20 lines + ~5 lines per role assignment
-
-**AVM Module Approach**:
-- Module has **60+ input variables**
-- Role assignments configured via nested `role_assignments` map (same structure as direct resource)
-- Secret creation NOT included in module - you still create `azurerm_key_vault_secret` resources separately
-
-#### **Concrete Benefits**: ⚠️ **MARGINAL**
-- **RBAC defaults**: Module sets `enable_rbac_authorization = true` by default. Saves 1 line. But Navigator explicitly documents RBAC choice, so this should be explicit in code.
-- **Soft delete enforcement**: Module enforces `soft_delete_retention_days >= 7`. Azure API ALREADY validates this.
-- **Purge protection**: Module doesn't enforce purge protection - you configure via input variable (same as direct resource).
-- **Private endpoint**: Saves ~8 lines of `azurerm_private_endpoint` resource. Cost: 30+ lines of module configuration.
-
-**Module Does NOT Provide**:
-- ❌ **Secret rotation policies** (must configure `azurerm_key_vault_secret` separately)
-- ❌ **Automated secret backup** (Azure feature, not module-specific)
-- ❌ **RBAC role discovery** (you still specify role names manually)
-
-#### **Costs**:
-- **Learning curve**: Module uses different naming for network access control (`network_acls` in direct resource vs. `network_acls` map in module). Functionally identical, but requires reading module docs.
-- **Debugging**: When RBAC assignment fails (wrong `principal_id`), error references module's internal `azurerm_role_assignment` resource instead of your direct configuration.
-- **Flexibility loss**: Module assumes you want RBAC-based access (correct for Navigator). But if you later need legacy access policies for specific secrets, module doesn't support this.
-
-**Verdict**: ❌ **Use direct `azurerm_key_vault` resource**
-
-**Specific Justification for Key Vault**:
-- Navigator's Key Vault configuration is straightforward: RBAC mode, soft delete, conditional private endpoint.
-- Module doesn't simplify secret management (you still create secrets separately).
-- **Risk**: Module's default `enable_rbac_authorization = true` is correct for Navigator, but hiding this as a default reduces Infrastructure-as-Code transparency.
-
----
-
-### 2.6 Container Registry (ACR) (`avm-res-containerregistry-registry`)
+### 2.5 Container Registry (ACR) (`avm-res-containerregistry-registry`)
 
 #### Claimed Benefits:
 - Geo-replication configuration
@@ -490,14 +413,13 @@ Each AVM module requires reading extensive documentation:
 | Container Apps Env | ~150 lines | 30+ | 5 examples | 1-2 hours |
 | Container App | ~250 lines | 100+ | 10 examples | 3-5 hours |
 | PostgreSQL | ~300 lines | 70+ | 12 examples | 3-6 hours |
-| Key Vault | ~200 lines | 60+ | 8 examples | 2-4 hours |
 | ACR | ~150 lines | 50+ | 6 examples | 1-2 hours |
 
-**Total learning overhead**: **12-23 hours** to understand all module interfaces.
+**Total learning overhead**: **10-19 hours** to understand all module interfaces.
 
-**Direct resource approach**: ~4-6 hours to read Azure provider documentation for 6 resources.
+**Direct resource approach**: ~3-5 hours to read Azure provider documentation for 5 resources.
 
-**Net cost**: **8-17 hours of developer time** for marginal benefit.
+**Net cost**: **7-14 hours of developer time** for marginal benefit.
 
 ### 3.2 Debugging Complexity
 
@@ -647,7 +569,7 @@ resource "azurerm_network_security_rule" "openai_outbound" {
 - **SC-28**: Protection of Information at Rest → Encryption (platform default)
 
 **AVM Module Alignment**:
-- ✅ Modules enforce TLS 1.2+ by default (e.g., Key Vault, PostgreSQL)
+- ✅ Modules enforce TLS 1.2+ by default (e.g., PostgreSQL, Storage)
 - ✅ Modules create diagnostic settings automatically (when Log Analytics workspace provided)
 - ❌ Modules do NOT enforce NSG rules for boundary protection (you still configure manually)
 - ❌ Modules do NOT enforce encryption at rest (Azure platform default, not module-specific)
@@ -680,16 +602,16 @@ resource "azurerm_network_security_rule" "openai_outbound" {
 **Goal**: Deploy Navigator to dev environment (Canada Central, single-zone, minimal cost).
 
 **Direct Resource Approach**:
-1. Write 6 `.tf` files (`vnet.tf`, `container-apps.tf`, `postgresql.tf`, `keyvault.tf`, `security.tf`, `monitoring.tf`)
-2. Total lines of code: ~200 lines
-3. Run `terraform plan` → clear output showing 15 resources to create
+1. Write 5 `.tf` files (`vnet.tf`, `container-apps.tf`, `postgresql.tf`, `security.tf`, `monitoring.tf`)
+2. Total lines of code: ~180 lines
+3. Run `terraform plan` → clear output showing 12-15 resources to create
 4. Apply → all resources deploy in ~10 minutes
 5. Troubleshoot issues by reading Azure API error messages directly
 
 **AVM Module Approach**:
-1. Write 6 module invocations in `main.tf`
-2. Read 30+ pages of module documentation to understand input variables
-3. Total lines of code: ~250 lines (module configurations + variable mappings)
+1. Write 5 module invocations in `main.tf`
+2. Read 25+ pages of module documentation to understand input variables
+3. Total lines of code: ~220 lines (module configurations + variable mappings)
 4. Run `terraform plan` → output references module internal resources (harder to verify correctness)
 5. Apply → deployment fails due to module variable misconfiguration (e.g., wrong `parent_id` format)
 6. Troubleshoot by:
@@ -786,7 +708,6 @@ inputs = {
 | **Container Apps Environment** | `avm-res-app-managedenvironment` | `azurerm_container_app_environment` | ✅ **Direct** | Module uses `azapi` provider. Diagnostic settings not worth 50-var overhead. |
 | **Container App** | `avm-res-app-containerapp` | `azurerm_container_app` | ✅ **Direct** | 100+ module variables for simple app config. No health probe benefit. |
 | **PostgreSQL Flexible Server** | `avm-res-dbforpostgresql-flexibleserver` | `azurerm_postgresql_flexible_server` | ✅ **Direct** | Module doesn't simplify HA configuration. Pre-release version risk. |
-| **Key Vault** | `avm-res-keyvault-vault` | `azurerm_key_vault` | ✅ **Direct** | Module doesn't automate secret creation. RBAC defaults reduce transparency. |
 | **Container Registry** | `avm-res-containerregistry-registry` | `azurerm_container_registry` | ✅ **Direct** | Geo-replication not needed. Vulnerability scanning not automated by module. |
 
 **Overall Strategy**: **Use direct `azurerm_*` resources for ALL infrastructure components.**
@@ -871,12 +792,12 @@ module "container_app" {
 
 | Metric | Direct Resources | AVM Modules | Difference |
 |--------|------------------|-------------|------------|
-| **Initial Development Time** | 8-12 hours | 20-35 hours | +12-23 hours |
-| **Lines of Code** | ~200 lines | ~250-300 lines | +25-50% |
-| **Learning Curve** | 4-6 hours | 12-23 hours | +8-17 hours |
+| **Initial Development Time** | 6-10 hours | 16-29 hours | +10-19 hours |
+| **Lines of Code** | ~180 lines | ~220-250 lines | +20-40% |
+| **Learning Curve** | 3-5 hours | 10-19 hours | +7-14 hours |
 | **Debugging Time (per issue)** | 30 min avg | 60-90 min avg | +2-3x |
 | **Upgrade Time (per module)** | 30 min | 2-4 hours | +4-8x |
-| **Terraform Plan Clarity** | High (15 resources) | Medium (module outputs) | -30% readability |
+| **Terraform Plan Clarity** | High (12-15 resources) | Medium (module outputs) | -30% readability |
 | **Operational Access** | Direct resource names | Module-generated names | +5-10 min per operation |
 
 ### Qualitative Costs
@@ -906,7 +827,7 @@ module "container_app" {
 ### Final Verdict: **Do NOT Use Azure Verified Modules for Navigator Infrastructure**
 
 **Summary of Findings**:
-1. **No concrete production benefits** for Navigator's scale (50-100 users, 6 core resources)
+1. **No concrete production benefits** for Navigator's scale (50-100 users, 5 core resources)
 2. **Significant complexity overhead** (learning curve, debugging, version management)
 3. **Pre-release instability** (all modules < 1.0.0, breaking changes expected)
 4. **No compliance advantage** (GC baseline security controls met with direct resources)
@@ -929,10 +850,6 @@ resource "azurerm_container_app" "navigator" { ... }
 # terraform/azure/postgresql.tf
 resource "azurerm_postgresql_flexible_server" "this" { ... }
 
-# terraform/azure/keyvault.tf
-resource "azurerm_key_vault" "this" { ... }
-resource "azurerm_key_vault_secret" "database_url" { ... }
-
 # terraform/azure/monitoring.tf (explicit, not hidden in modules)
 resource "azurerm_log_analytics_workspace" "this" { ... }
 resource "azurerm_monitor_diagnostic_setting" "container_apps" { ... }
@@ -954,7 +871,7 @@ Re-consider AVMs if Navigator infrastructure reaches:
 - **Complex networking** (hub-spoke, VPN, ExpressRoute)
 - **Shared services pattern** (5+ dependent infrastructure stacks)
 
-For current scope (single-region, 50-100 users, 6 core resources): **Direct resources are optimal.**
+For current scope (single-region, 50-100 users, 5 core resources): **Direct resources are optimal.**
 
 ---
 
@@ -968,7 +885,6 @@ For current scope (single-region, 50-100 users, 6 core resources): **Direct reso
 | Container App | https://registry.terraform.io/modules/Azure/avm-res-app-containerapp/azurerm | 0.4.x |
 | PostgreSQL Flexible Server | https://registry.terraform.io/modules/Azure/avm-res-dbforpostgresql-flexibleserver/azurerm | 0.6.x |
 | Virtual Network | https://registry.terraform.io/modules/Azure/avm-res-network-virtualnetwork/azurerm | 0.7.x |
-| Key Vault | https://registry.terraform.io/modules/Azure/avm-res-keyvault-vault/azurerm | 0.11.x |
 | Container Registry | https://registry.terraform.io/modules/Azure/avm-res-containerregistry-registry/azurerm | 0.4.x |
 
 ### GitHub Source Repositories
@@ -979,7 +895,6 @@ For current scope (single-region, 50-100 users, 6 core resources): **Direct reso
 | Container App | https://github.com/Azure/terraform-azurerm-avm-res-app-containerapp |
 | PostgreSQL Flexible Server | https://github.com/Azure/terraform-azurerm-avm-res-dbforpostgresql-flexibleserver |
 | Virtual Network | https://github.com/Azure/terraform-azurerm-avm-res-network-virtualnetwork |
-| Key Vault | https://github.com/Azure/terraform-azurerm-avm-res-keyvault-vault |
 | Container Registry | https://github.com/Azure/terraform-azurerm-avm-res-containerregistry-registry |
 
 ---
