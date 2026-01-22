@@ -20,6 +20,15 @@
         "hashicorp/terraform-mcp-server:0.3.3"
       ]
     },
+    "azure": {
+      "type": "local",
+      "command": ["npx",
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ]
+    }
   },
   "instructions": [".github/instructions/terraform.instructions.md"],
   "permission": {
