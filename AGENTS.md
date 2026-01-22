@@ -8,7 +8,9 @@ This repository contains Azure infrastructure code to deploy the [Navigator](htt
 
 **Repository structure:**
 - `navigator/` - Git submodule containing the Navigator application source code (Elixir/Phoenix)
-- `iac/` - Terraform infrastructure code for Azure deployment (to be created)
+- `terraform/` - Terraform infrastructure code for Azure deployment (to be created)
+    - `terraform/azure` - .tf files
+    - `terraform/env/` - Terragrunt configurations for each of `dev` and `production` stored as `terragrunt.hcl`
 - `specs/` - Feature specifications and planning documents
 - `.github/instructions/` - Code conventions and guidelines
 
