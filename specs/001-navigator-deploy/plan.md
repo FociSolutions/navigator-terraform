@@ -141,7 +141,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Port: 4000 (Phoenix app default)
 - Health Probes: HTTP liveness probe on "/" endpoint (matches ALB health check pattern)
 - Ingress: HTTPS only (TLS 1.2+), external ingress for internet access
-- Session Affinity: Enable session affinity for WebSocket persistence (real-time collaboration requires sticky sessions). Implemented using azapi provider via azapi_update_resource (session affinity not yet available in azurerm_container_app resource)
+- Session Affinity: Enable session affinity for WebSocket persistence (real-time collaboration requires sticky sessions). Implemented using azapi provider via azapi_resource_action (session affinity not yet available in azurerm_container_app resource)
 - Startup Command: Container runs default Phoenix startup sequence (database migrations on startup; migration failures prevent container start, requiring rollback via Container Apps revision management)
 
 **Container Registry** (Optional, recommend for production)

@@ -93,7 +93,7 @@ The AzAPI provider is Microsoft's official Terraform provider that provides a **
 
 **Recommended Pattern**: Hybrid azurerm + azapi approach
 
-Use `azapi_update_resource` to patch the Container App after azurerm creates it:
+Use `azapi_resource_action` to patch the Container App after azurerm creates it:
 
 ```hcl
 # Main Container App resource (azurerm provider)
@@ -117,7 +117,7 @@ resource "azurerm_container_app" "navigator" {
 }
 
 # Session affinity configuration (azapi provider)
-resource "azapi_update_resource" "navigator_session_affinity" {
+resource "azapi_resource_action" "navigator_session_affinity" {
   type        = "Microsoft.App/containerApps@2024-03-01"
   resource_id = azurerm_container_app.navigator.id
 
@@ -260,13 +260,13 @@ azapi = {
 **Monitor for azurerm Support**:
 - GitHub Issue Tracker: https://github.com/hashicorp/terraform-provider-azurerm/issues
 - Search for: "container app session affinity" or "sticky sessions"
-- When azurerm adds native support, migrate from azapi_update_resource to azurerm attribute
+- When azurerm adds native support, migrate from azapi_resource_action to azurerm attribute
 
 ### Best Practices
 
 1. **Minimize AzAPI Usage**: Use only for specific missing features, not entire resources
 2. **Document API Versions**: Specify explicit API version in `type` field (e.g., `@2024-03-01`)
-3. **Use depends_on**: Ensure azapi_update_resource runs after base resource creation
+3. **Use depends_on**: Ensure azapi_resource_action runs after base resource creation
 4. **Add Comments**: Explain why AzAPI is needed and when it can be removed
 5. **Monitor azurerm Updates**: Check for native support in new azurerm releases
 6. **Test Thoroughly**: AzAPI uses raw JSON - validate syntax and structure carefully
@@ -711,13 +711,13 @@ resource "azurerm_container_app" "navigator" {
     }
 
     # Note: session_affinity not supported in azurerm provider
-    # Use azapi_update_resource to configure sticky sessions
+    # Use azapi_resource_action to configure sticky sessions
     # See "AzAPI Provider for Missing azurerm Features" section above
   }
 }
 
 # Session affinity configuration (azapi provider)
-resource "azapi_update_resource" "navigator_session_affinity" {
+resource "azapi_resource_action" "navigator_session_affinity" {
   type        = "Microsoft.App/containerApps@2024-03-01"
   resource_id = azurerm_container_app.navigator.id
 
