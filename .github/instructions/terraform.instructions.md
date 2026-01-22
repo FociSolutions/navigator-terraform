@@ -18,6 +18,10 @@ applyTo: '**/*.tf'
   - This prevents sensitive values from being displayed in the Terraform plan or apply output.
 - Regularly review and audit your Terraform configurations for security vulnerabilities.
   - Use tools like `trivy`, `tfsec`, or `checkov` to scan your Terraform configurations for security issues.
+- Prefer ephemeral resources and write-only attributes for sensitive fields when available.
+  - Ephemeral resources are never stored in state, ideal for temporary credentials and tokens.
+  - Write-only attributes accept sensitive input but don't store values in state.
+  - Both provide stronger security than `sensitive = true` (which still stores encrypted values in state).
 
 ## Modularity
 
