@@ -42,7 +42,9 @@ Before implementing this plan, ensure the following baseline infrastructure exis
 
 **Cloud Provider**: Microsoft Azure  
 **IaC Tool**: Terraform 1.9+ (latest stable as of January 2026)  
-**Provider Versions**: azurerm ~> 4.0 (latest stable, required for Container Apps native support)  
+**Provider Versions**:
+- azurerm ~> 4.0 (latest stable, required for Container Apps native support)
+- azapi ~> 2.0 (required for session affinity - not yet available in azurerm provider)
 **Module Versions**: Direct resources only - no modules used in this implementation (follows "Prefer Resource Simplicity" principle v3.0.0). See [avm-reevaluation.md](./avm-reevaluation.md) for comprehensive analysis of Azure Verified Modules decision.  
 **State Backend**: Azure Blob Storage with state locking (azurerm backend)  
 **Environment Strategy**: Terragrunt with directory-based environments (terraform/env/{dev,staging,production}) referencing shared module (terraform/azure/)  
@@ -139,7 +141,7 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Port: 4000 (Phoenix app default)
 - Health Probes: HTTP liveness probe on "/" endpoint (matches ALB health check pattern)
 - Ingress: HTTPS only (TLS 1.2+), external ingress for internet access
-- Session Affinity: Enable session affinity for WebSocket persistence (real-time collaboration requires sticky sessions)
+- Session Affinity: Enable session affinity for WebSocket persistence (real-time collaboration requires sticky sessions). Implemented using azapi provider via azapi_update_resource (session affinity not yet available in azurerm_container_app resource)
 - Startup Command: Container runs default Phoenix startup sequence (database migrations on startup; migration failures prevent container start, requiring rollback via Container Apps revision management)
 
 **Container Registry** (Optional, recommend for production)

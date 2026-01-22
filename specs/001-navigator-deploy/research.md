@@ -29,7 +29,255 @@
 **Version Constraints**:
 - Terraform: >= 1.9.0 (latest stable as of January 2026)
 - azurerm provider: ~> 4.0 (required for native Container Apps support)
+- azapi provider: ~> 2.0 (required for session affinity and preview features)
 - Azure CLI: >= 2.60.0 (for Container Apps commands)
+
+---
+
+## AzAPI Provider for Missing azurerm Features
+
+### Overview
+
+**What is the AzAPI Provider?**
+
+The AzAPI provider is Microsoft's official Terraform provider that provides a **thin layer on top of Azure ARM REST APIs**. It complements the azurerm provider by enabling management of Azure resources and features that are not yet supported in azurerm, such as preview services, preview features, or recently released capabilities.
+
+**Provider Details**:
+- **Namespace**: Azure/azapi
+- **Latest Version**: 2.8.0 (as of January 2026)
+- **Registry**: https://registry.terraform.io/providers/Azure/azapi/latest
+- **GitHub**: https://github.com/Azure/terraform-provider-azapi
+- **Documentation**: https://registry.terraform.io/providers/Azure/azapi/latest/docs
+
+### Why AzAPI for Navigator?
+
+**Problem**: The `azurerm_container_app` resource **does NOT support session affinity (sticky sessions)** configuration, even though this feature is available in the Azure Container Apps service via the REST API.
+
+**Azure Container Apps Session Affinity**:
+- Required for WebSocket persistence (Phoenix LiveView real-time collaboration)
+- Configured via `properties.configuration.ingress.stickySessions.affinity = "sticky"` in the Azure ARM API
+- Available in Azure Portal, Azure CLI, and ARM/Bicep templates
+- **NOT available** in azurerm provider (as of version 4.57.0)
+
+**Solution**: Use AzAPI provider to configure session affinity alongside azurerm resources.
+
+### Session Affinity Requirements
+
+**Azure Documentation**: https://learn.microsoft.com/en-us/azure/container-apps/sticky-sessions
+
+**Key Requirements**:
+- Only supported in **single revision mode** (not multiple revision mode)
+- Only supported when **ingress type is HTTP** (not TCP)
+- Uses HTTP cookies to enforce stickiness
+- Clients may be routed to new replica if previous replica becomes unavailable
+
+**JSON Configuration Structure**:
+```json
+{
+  "properties": {
+    "configuration": {
+      "ingress": {
+        "external": true,
+        "targetPort": 4000,
+        "transport": "auto",
+        "stickySessions": {
+          "affinity": "sticky"
+        }
+      }
+    }
+  }
+}
+```
+
+### Implementation Approach
+
+**Recommended Pattern**: Hybrid azurerm + azapi approach
+
+Use `azapi_update_resource` to patch the Container App after azurerm creates it:
+
+```hcl
+# Main Container App resource (azurerm provider)
+resource "azurerm_container_app" "navigator" {
+  name                = "nav-${var.environment}-ca-001"
+  resource_group_name = var.resource_group_name
+  # ... standard configuration ...
+
+  ingress {
+    external_enabled = true
+    target_port      = 4000
+    transport        = "auto"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+
+    # Note: session_affinity not supported in azurerm provider
+  }
+}
+
+# Session affinity configuration (azapi provider)
+resource "azapi_update_resource" "navigator_session_affinity" {
+  type        = "Microsoft.App/containerApps@2024-03-01"
+  resource_id = azurerm_container_app.navigator.id
+
+  body = jsonencode({
+    properties = {
+      configuration = {
+        ingress = {
+          stickySessions = {
+            affinity = "sticky"
+          }
+        }
+      }
+    }
+  })
+
+  # Ensure this runs after Container App is created
+  depends_on = [azurerm_container_app.navigator]
+}
+```
+
+**Why This Approach**:
+1. **Transparency**: Main resource defined in familiar azurerm syntax
+2. **Minimal AzAPI Usage**: Only use AzAPI for the specific missing feature
+3. **Maintainability**: When azurerm adds session_affinity support, easy to migrate
+4. **State Management**: Both resources tracked in Terraform state
+
+**Alternative Approach**: Full azapi_resource
+
+Use `azapi_resource` for the entire Container App (not recommended unless multiple features are missing):
+
+```hcl
+resource "azapi_resource" "navigator" {
+  type      = "Microsoft.App/containerApps@2024-03-01"
+  parent_id = var.resource_group_id
+  name      = "nav-${var.environment}-ca-001"
+
+  body = jsonencode({
+    properties = {
+      managedEnvironmentId = azurerm_container_app_environment.main.id
+      configuration = {
+        ingress = {
+          external      = true
+          targetPort    = 4000
+          transport     = "auto"
+          stickySessions = {
+            affinity = "sticky"
+          }
+        }
+        # ... rest of configuration as JSON ...
+      }
+      template = {
+        # ... template configuration as JSON ...
+      }
+    }
+  })
+}
+```
+
+**Drawbacks**:
+- Less readable (raw JSON instead of HCL)
+- Harder to maintain and review
+- No IDE autocomplete or type checking
+- More verbose
+
+### Provider Configuration
+
+**versions.tf**:
+```hcl
+terraform {
+  required_version = ">= 1.9.0"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
+    }
+  }
+}
+```
+
+**provider.tf**:
+```hcl
+provider "azurerm" {
+  features {}
+  subscription_id = var.subscription_id
+}
+
+provider "azapi" {
+  # Uses same authentication as azurerm provider
+  # Supports: Azure CLI, Managed Identity, Service Principal, OIDC
+  subscription_id = var.subscription_id
+}
+```
+
+**Authentication**: AzAPI uses the same authentication methods as azurerm:
+- Azure CLI (`az login`)
+- Managed Service Identity (for Azure resources)
+- Service Principal with Client Secret
+- Service Principal with Client Certificate
+- OpenID Connect (OIDC) for GitHub Actions
+
+### Version Pinning Strategy
+
+**Development Environments**:
+```hcl
+azapi = {
+  source  = "Azure/azapi"
+  version = "~> 2.0"  # Allow minor version updates
+}
+```
+
+**Production Environments**:
+```hcl
+azapi = {
+  source  = "Azure/azapi"
+  version = "= 2.8.0"  # Exact version pinning for stability
+}
+```
+
+**Rationale**: AzAPI is actively developed with frequent updates as new Azure features are added. Exact version pinning prevents unexpected changes in production.
+
+### When to Use AzAPI vs Waiting for azurerm Support
+
+**Use AzAPI When**:
+- Feature is **required for MVP** (session affinity for Navigator's WebSocket support)
+- Feature is **stable in Azure** (generally available, not preview)
+- azurerm support is **not planned or delayed** (check GitHub issues)
+- Alternative workarounds are **more complex** (e.g., using Azure CLI in provisioners)
+
+**Wait for azurerm Support When**:
+- Feature is **nice-to-have** (not blocking MVP)
+- azurerm support is **actively being developed** (PR in progress)
+- Feature is **preview** (may change before GA)
+- Workaround is **simple** (e.g., one-time manual configuration)
+
+**Monitor for azurerm Support**:
+- GitHub Issue Tracker: https://github.com/hashicorp/terraform-provider-azurerm/issues
+- Search for: "container app session affinity" or "sticky sessions"
+- When azurerm adds native support, migrate from azapi_update_resource to azurerm attribute
+
+### Best Practices
+
+1. **Minimize AzAPI Usage**: Use only for specific missing features, not entire resources
+2. **Document API Versions**: Specify explicit API version in `type` field (e.g., `@2024-03-01`)
+3. **Use depends_on**: Ensure azapi_update_resource runs after base resource creation
+4. **Add Comments**: Explain why AzAPI is needed and when it can be removed
+5. **Monitor azurerm Updates**: Check for native support in new azurerm releases
+6. **Test Thoroughly**: AzAPI uses raw JSON - validate syntax and structure carefully
+
+### References
+
+- **AzAPI Provider Documentation**: https://registry.terraform.io/providers/Azure/azapi/latest/docs
+- **Azure Container Apps REST API**: https://learn.microsoft.com/en-us/rest/api/containerapps/
+- **Session Affinity Documentation**: https://learn.microsoft.com/en-us/azure/container-apps/sticky-sessions
+- **AzAPI GitHub Examples**: https://github.com/Azure/terraform-provider-azapi/tree/main/examples
+- **Microsoft Terraform Extension**: https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureterraform (includes AzAPI IntelliSense)
 
 ---
 
@@ -462,11 +710,30 @@ resource "azurerm_container_app" "navigator" {
       latest_revision = true
     }
 
-    # Enable session affinity for WebSocket support
-    session_affinity {
-      affinity_type = "sticky"
-    }
+    # Note: session_affinity not supported in azurerm provider
+    # Use azapi_update_resource to configure sticky sessions
+    # See "AzAPI Provider for Missing azurerm Features" section above
   }
+}
+
+# Session affinity configuration (azapi provider)
+resource "azapi_update_resource" "navigator_session_affinity" {
+  type        = "Microsoft.App/containerApps@2024-03-01"
+  resource_id = azurerm_container_app.navigator.id
+
+  body = jsonencode({
+    properties = {
+      configuration = {
+        ingress = {
+          stickySessions = {
+            affinity = "sticky"
+          }
+        }
+      }
+    }
+  })
+
+  depends_on = [azurerm_container_app.navigator]
 }
 ```
 

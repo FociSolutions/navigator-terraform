@@ -227,6 +227,12 @@ resource "azurerm_subnet" "postgres" {
 | **Managed Identity** | System-assigned | System-assigned |
 | **Health Probe** | HTTP liveness on "/" | HTTP liveness + readiness on "/" |
 
+**Session Affinity Implementation Note**:
+- Session affinity (sticky sessions) is required for Phoenix LiveView WebSocket persistence
+- Configured using **AzAPI provider** via `azapi_update_resource` (not yet supported in `azurerm_container_app`)
+- Sets `properties.configuration.ingress.stickySessions.affinity = "sticky"` via Azure ARM REST API
+- See [research.md](./research.md#azapi-provider-for-missing-azurerm-features) for detailed implementation approach
+
 ### Environment Variables
 
 | Variable Name | Source | Value/Secret Reference |

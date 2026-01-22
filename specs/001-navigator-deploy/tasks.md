@@ -84,12 +84,16 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 ### Container Apps & Container Registry
 
+**Session Affinity Note**: The azurerm provider does NOT support session affinity configuration (as of v4.x). We use the azapi provider's `azapi_update_resource` to patch the Container App after creation. This is required for Phoenix LiveView WebSocket persistence. See research.md for implementation details.
+
 - [X] T034 Create terraform/azure/container-apps.tf with Log Analytics Workspace (sku=PerGB2018, retention_in_days conditional on environment: 30 for dev, 90 for production, daily_quota_gb conditional)
 - [X] T035 Create Azure Container Apps Environment in terraform/azure/container-apps.tf with VNet integration (infrastructure_subnet_id from Container Apps subnet, internal_load_balancer_enabled=false for external ingress, zone_redundancy_enabled from var.enable_zone_redundancy, log_analytics_workspace_id)
 - [X] T036 Create Navigator Container App in terraform/azure/container-apps.tf (image: public.ecr.aws/cds-snc/valentine:latest initially)
 - [X] T037 Configure container resources in terraform/azure/container-apps.tf (cpu from var.container_cpu, memory from var.container_memory)
 - [X] T038 Configure scaling rules in terraform/azure/container-apps.tf: dev uses http_scale_rule with concurrent_requests=10, production uses custom_scale_rule with type=cpu and metadata for threshold=70
-- [X] T039 Configure Container Apps ingress in terraform/azure/container-apps.tf (external_enabled=true, target_port=4000, transport=http, allow_insecure_connections=false for HTTPS enforcement, traffic_weight 100% latest_revision, session_affinity sticky sessions enabled)
+- [X] T039 Configure Container Apps ingress in terraform/azure/container-apps.tf (external_enabled=true, target_port=4000, transport=http, allow_insecure_connections=false for HTTPS enforcement, traffic_weight 100% latest_revision)
+- [ ] T039a Add azapi provider to terraform/azure/versions.tf (source="Azure/azapi", version="~> 2.0") for session affinity configuration support
+- [ ] T039b Implement session affinity using azapi_update_resource in terraform/azure/container-apps.tf (type="Microsoft.App/containerApps@2024-03-01", set stickySessions.affinity="sticky" for Phoenix LiveView WebSocket persistence, depends_on azurerm_container_app.navigator)
 - [X] T040 Configure health probes in terraform/azure/container-apps.tf: liveness_probe (type=http, path="/", port=4000, initial_delay=10, period=30, timeout=5, failure_threshold=3), startup_probe (type=http, path="/", port=4000, period=10, failure_threshold=30 for 5min startup allowance)
 - [X] T041 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
 - [X] T042 Configure container environment variables and secrets in terraform/azure/container-apps.tf: secrets block with DATABASE_URL (from PostgreSQL connection string local value), SECRET_KEY_BASE (from random_password resource), plus static env vars PORT=4000, PHX_HOST from ingress FQDN
@@ -403,12 +407,12 @@ Resources created only when feature flag enabled (using `count` expressions):
 
 ## Task Summary
 
-**Total Tasks**: 87
+**Total Tasks**: 89
 
 **Task Count by Phase**:
 - Phase 1 (Setup): 11 tasks
 - Phase 2 (Network Tier): 12 tasks
-- Phase 3 (Compute & Data Tier): 27 tasks
+- Phase 3 (Compute & Data Tier): 29 tasks
 - Phase 4 (Application Tier): 17 tasks
 - Phase 5 (Polish): 20 tasks
 
