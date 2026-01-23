@@ -20,15 +20,16 @@ This guide provides instructions for deploying Navigator infrastructure to Azure
 
 Install the following tools before proceeding:
 
-| Tool | Minimum Version | Installation |
-|------|----------------|--------------|
-| **Terraform** | 1.9.0+ | https://www.terraform.io/downloads |
-| **Terragrunt** | 0.55.0+ | https://terragrunt.gruntwork.io/docs/getting-started/install/ |
-| **Azure CLI** | 2.60.0+ | https://learn.microsoft.com/en-us/cli/azure/install-azure-cli |
-| **Git** | 2.40.0+ | https://git-scm.com/downloads |
-| **Trivy** | 0.50.0+ | https://aquasecurity.github.io/trivy/latest/getting-started/installation/ |
+| Tool           | Minimum Version | Installation                                                              |
+| -------------- | --------------- | ------------------------------------------------------------------------- |
+| **Terraform**  | 1.9.0+          | https://www.terraform.io/downloads                                        |
+| **Terragrunt** | 0.55.0+         | https://terragrunt.gruntwork.io/docs/getting-started/install/             |
+| **Azure CLI**  | 2.60.0+         | https://learn.microsoft.com/en-us/cli/azure/install-azure-cli             |
+| **Git**        | 2.40.0+         | https://git-scm.com/downloads                                             |
+| **Trivy**      | 0.50.0+         | https://aquasecurity.github.io/trivy/latest/getting-started/installation/ |
 
 **Verification**:
+
 ```bash
 terraform version  # Should show 1.9.0 or higher
 terragrunt --version  # Should show 0.55.0 or higher
@@ -39,6 +40,7 @@ trivy --version  # Should show 0.50.0 or higher
 ### 2. Azure Subscription and Authentication
 
 **Required**:
+
 - Azure subscription with appropriate permissions
 - Contributor role on target resource groups
 - Storage Blob Data Contributor role on Terraform state storage accounts
@@ -46,6 +48,7 @@ trivy --version  # Should show 0.50.0 or higher
 **Authentication Methods**:
 
 **Option 1: Azure CLI (Recommended for local development)**:
+
 ```bash
 az login
 az account set --subscription "<SUBSCRIPTION_ID>"
@@ -53,6 +56,7 @@ az account show  # Verify correct subscription
 ```
 
 **Option 2: Service Principal (CI/CD)**:
+
 ```bash
 export ARM_CLIENT_ID="<CLIENT_ID>"
 export ARM_CLIENT_SECRET="<CLIENT_SECRET>"
@@ -61,6 +65,7 @@ export ARM_TENANT_ID="<TENANT_ID>"
 ```
 
 **Option 3: GitHub OIDC (GitHub Actions, no secrets)**:
+
 - Configure federated credentials in Azure AD application
 - GitHub Actions workflow uses `azure/login@v1` with OIDC
 
@@ -69,12 +74,14 @@ export ARM_TENANT_ID="<TENANT_ID>"
 **Verify the following resources exist before proceeding**:
 
 **Resource Groups**:
+
 ```bash
 az group show --name navigator-dev-rg --query "properties.provisioningState"  # Should return "Succeeded"
 az group show --name navigator-prod-rg --query "properties.provisioningState"  # Should return "Succeeded"
 ```
 
 **Terraform State Storage**:
+
 ```bash
 # Verify state resource group
 az group show --name navigator-tfstate-rg
@@ -89,6 +96,7 @@ az storage container show --name tfstate --account-name navtfstateprod
 ```
 
 **RBAC Permissions**:
+
 ```bash
 # Verify your permissions on state storage
 az role assignment list --assignee $(az account show --query user.name -o tsv) --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/navigator-tfstate-rg
@@ -96,6 +104,7 @@ az role assignment list --assignee $(az account show --query user.name -o tsv) -
 ```
 
 **If Prerequisites Missing**:
+
 - **Manual Creation**: Create resource groups and state storage manually via Azure Portal or CLI
 - **Bootstrap Script**: Run a separate bootstrap Terraform configuration (out of scope for this guide)
 
@@ -156,6 +165,7 @@ terragrunt init
 ```
 
 **Expected Output**:
+
 ```
 Initializing the backend...
 Initializing provider plugins...
@@ -173,6 +183,7 @@ terragrunt validate
 ```
 
 **Expected Output**:
+
 ```
 Success! The configuration is valid.
 ```
@@ -187,6 +198,7 @@ trivy config terraform/azure/ --severity CRITICAL,HIGH
 ```
 
 **Expected Findings**:
+
 - AVD-AZU-0047: Unrestricted inbound NSG rule (suppressed, public web app)
 - AVD-AZU-0051: Unrestricted outbound NSG rule (suppressed, documented justification)
 
@@ -202,11 +214,13 @@ terragrunt plan -out=tfplan
 ```
 
 **Review Plan Output**:
+
 - **Resources to create**: ~20-25 resources (VNet, subnets, NSGs, Container Apps, PostgreSQL, etc.)
 - **Sensitive values**: Database passwords, secret keys (marked as sensitive in plan)
 - **Cost estimate** (if using Infracost): ~$27-45/month for dev environment
 
 **Important Checks**:
+
 - ✅ No resources will be destroyed (first deployment)
 - ✅ All secrets stored in Container Apps secrets (platform-encrypted)
 - ✅ PostgreSQL uses private networking (delegated subnet, no public access)
@@ -223,11 +237,13 @@ terragrunt apply tfplan
 **Deployment Time**: 10-15 minutes (PostgreSQL and Container Apps Environment are slowest)
 
 **Monitor Progress**:
+
 - Terraform will show resource creation in real-time
 - Azure Portal: Monitor resource group `navigator-dev-rg` for resources appearing
 - Errors will be displayed in red with error messages
 
 **Common Issues**:
+
 - **Subnet delegation conflict**: Ensure no existing resources in subnet before delegation
 - **DNS zone missing**: DNS zones are created by Terraform (unless using default Container Apps domain)
 
@@ -236,6 +252,7 @@ terragrunt apply tfplan
 After successful deployment, verify resources:
 
 **Container Apps**:
+
 ```bash
 az containerapp show \
   --name navigator-dev \
@@ -246,6 +263,7 @@ az containerapp show \
 **Expected Output**: `navigator-dev.<random>.canadacentral.azurecontainerapps.io`
 
 **PostgreSQL**:
+
 ```bash
 az postgres flexible-server show \
   --name nav-dev-postgres \
@@ -256,6 +274,7 @@ az postgres flexible-server show \
 **Expected Output**: `nav-dev-postgres.postgres.database.azure.com`
 
 **Test Application**:
+
 ```bash
 FQDN=$(az containerapp show --name navigator-dev --resource-group navigator-dev-rg --query "properties.configuration.ingress.fqdn" -o tsv)
 curl -I https://$FQDN
@@ -272,6 +291,7 @@ terragrunt output
 ```
 
 **Key Outputs**:
+
 - `container_app_fqdn`: Public URL for Navigator application
 - `container_app_identity_principal_id`: Managed identity ID (for RBAC assignments)
 - `postgres_fqdn`: PostgreSQL server FQDN (private, accessible from VNet only)
@@ -281,6 +301,7 @@ terragrunt output
 ## Production Environment Deployment
 
 **Prerequisites**:
+
 1. ✅ Development environment deployed and tested successfully
 2. ✅ Application tested in development (database migrations, authentication, core functionality)
 3. ✅ Security review completed (Trivy scan, NSG rules, private networking)
@@ -295,6 +316,7 @@ cd terraform/env/production
 ### Step 2: Review Production Configuration
 
 **Terragrunt Configuration** (`terragrunt.hcl`):
+
 ```hcl
 inputs = {
   environment               = "production"
@@ -318,11 +340,12 @@ inputs = {
   enable_auto_shutdown        = false
 
   # Domain
-  domain_name = "valentine.cds-snc.ca"
+  domain_name = "navigator.demo.focisolutions.com"
 }
 ```
 
 **Configuration Differences from Dev**:
+
 - Larger SKUs (more vCPU, memory)
 - Zone-redundant high availability enabled
 - Longer backup retention (14 days vs 7 days)
@@ -353,6 +376,7 @@ terragrunt plan -out=tfplan
 ```
 
 **Production Plan Review Checklist**:
+
 - ✅ PostgreSQL has zone-redundant HA enabled
 - ✅ Container Apps min replicas = 1 (always available)
 - ✅ Application Insights enabled
@@ -365,12 +389,14 @@ terragrunt plan -out=tfplan
 **CRITICAL**: Production deployments require manual approval.
 
 **GitHub Actions Workflow** (recommended approach):
+
 1. Push to `main` branch triggers plan generation
 2. Review plan in GitHub Actions logs
 3. Manual approval gate (protected environment)
 4. Auto-apply after approval
 
 **Manual Deployment** (if not using GitHub Actions):
+
 ```bash
 # ONLY run this after thorough plan review
 terragrunt apply tfplan
@@ -381,6 +407,7 @@ terragrunt apply tfplan
 ### Step 7: Post-Deployment Verification
 
 **Verify High Availability**:
+
 ```bash
 az postgres flexible-server show \
   --name nav-prod-postgres \
@@ -391,6 +418,7 @@ az postgres flexible-server show \
 **Expected Output**: `ZoneRedundant`
 
 **Verify Container Apps Replicas**:
+
 ```bash
 az containerapp revision list \
   --name navigator-prod \
@@ -401,6 +429,7 @@ az containerapp revision list \
 **Expected Output**: At least 1 active replica
 
 **Test Production URL**:
+
 ```bash
 FQDN=$(az containerapp show --name navigator-prod --resource-group navigator-prod-rg --query "properties.configuration.ingress.fqdn" -o tsv)
 curl -I https://$FQDN
@@ -415,6 +444,7 @@ curl -I https://$FQDN
 ### 1. Application Health Check
 
 **Container Apps Logs**:
+
 ```bash
 az containerapp logs show \
   --name navigator-dev \
@@ -427,6 +457,7 @@ az containerapp logs show \
 ### 2. Database Connectivity
 
 **Connect to PostgreSQL** (from VNet-connected machine or bastion):
+
 ```bash
 psql "host=nav-dev-postgres.postgres.database.azure.com port=5432 dbname=navigator user=navadmin password=<PASSWORD> sslmode=disable"
 
@@ -434,6 +465,7 @@ psql "host=nav-dev-postgres.postgres.database.azure.com port=5432 dbname=navigat
 ```
 
 **Run Test Query**:
+
 ```sql
 SELECT version();
 -- Expected: PostgreSQL 16.x on x86_64-pc-linux-gnu
@@ -442,6 +474,7 @@ SELECT version();
 ### 3. Network Connectivity
 
 **Test VNet Integration**:
+
 ```bash
 # From Container Apps pod (using Azure CLI container exec)
 az containerapp exec \
@@ -457,6 +490,7 @@ ping nav-dev-postgres.postgres.database.azure.com
 ### 4. Monitoring and Logs
 
 **Log Analytics Query**:
+
 ```bash
 az monitor log-analytics query \
   --workspace <WORKSPACE_ID> \
@@ -465,6 +499,7 @@ az monitor log-analytics query \
 ```
 
 **Application Insights** (production only):
+
 - Navigate to Azure Portal → Application Insights → navigator-prod
 - Review: Live Metrics, Application Map, Performance, Failures
 
@@ -477,11 +512,13 @@ az monitor log-analytics query \
 If a deployment fails or causes issues, rollback to previous state:
 
 **Method 1: Terraform Destroy (Last Resort)**:
+
 ```bash
 terragrunt destroy  # DANGER: Deletes all resources
 ```
 
 **Method 2: Revert to Previous Terraform State**:
+
 ```bash
 # List state versions
 az storage blob list \
@@ -508,6 +545,7 @@ az storage blob upload \
 ```
 
 **Method 3: Revert Code and Re-apply** (Recommended):
+
 ```bash
 git checkout <PREVIOUS_COMMIT>
 cd terraform/env/dev
@@ -518,6 +556,7 @@ terragrunt apply  # Revert to previous configuration
 ### Rollback Container App Revision
 
 **List Revisions**:
+
 ```bash
 az containerapp revision list \
   --name navigator-dev \
@@ -526,6 +565,7 @@ az containerapp revision list \
 ```
 
 **Activate Previous Revision**:
+
 ```bash
 az containerapp revision activate \
   --revision <PREVIOUS_REVISION_NAME> \
@@ -545,6 +585,7 @@ az containerapp revision activate \
 **Cause**: Previous Terraform operation did not release lock (interrupted process)
 
 **Solution**:
+
 ```bash
 # Force unlock (use with caution)
 terragrunt force-unlock <LOCK_ID>
@@ -555,6 +596,7 @@ terragrunt force-unlock <LOCK_ID>
 **Symptom**: Container app shows "ProvisioningFailed" or "ContainerCreateFailed"
 
 **Diagnosis**:
+
 ```bash
 az containerapp logs show \
   --name navigator-dev \
@@ -563,11 +605,13 @@ az containerapp logs show \
 ```
 
 **Common Causes**:
+
 - **Missing environment variable**: Check Container Apps secrets configuration
 - **Database connectivity**: Verify PostgreSQL network rules, connection string
 - **Image pull failure**: Verify ACR permissions or public ECR access
 
 **Solution**:
+
 ```bash
 # Restart container app
 az containerapp revision restart \
@@ -581,6 +625,7 @@ az containerapp revision restart \
 **Symptom**: Application logs show `connection refused` or `timeout`
 
 **Diagnosis**:
+
 ```bash
 # Verify PostgreSQL is running
 az postgres flexible-server show \
@@ -597,6 +642,7 @@ az network nsg rule list \
 ```
 
 **Solution**:
+
 - Verify Container Apps can reach PostgreSQL subnet (10.240.2.0/24)
 - Check NSG rules on both Container Apps and PostgreSQL subnets
 - Verify connection string (in Container Apps secrets) matches PostgreSQL TLS configuration (`sslmode=disable` by default, or `sslmode=require` if TLS enabled)
@@ -606,11 +652,13 @@ az network nsg rule list \
 **Symptom**: CI/CD pipeline fails on Trivy scan
 
 **Diagnosis**:
+
 ```bash
 trivy config terraform/azure/ --severity CRITICAL,HIGH
 ```
 
 **Solution**:
+
 - Review findings and determine if suppression is justified
 - Add `#trivy:ignore:<RULE_ID>` with business justification
 - Update security controls if finding indicates real vulnerability
@@ -631,12 +679,14 @@ terragrunt destroy
 **Confirmation Required**: Type `yes` when prompted
 
 **Resources Deleted**:
+
 - Container Apps Environment and Navigator app
 - PostgreSQL Flexible Server (⚠️ data loss)
 - VNet and subnets
 - NSGs and diagnostic settings
 
 **Preserved**:
+
 - Resource group (if `prevent_deletion_if_contains_resources = false`)
 - Terraform state file (in Azure Blob Storage)
 
@@ -645,6 +695,7 @@ terragrunt destroy
 **WARNING**: Production destruction is **PROTECTED** by Terraform lifecycle rules.
 
 **Prerequisites**:
+
 1. Remove lifecycle `prevent_destroy = true` from critical resources
 2. Manual approval from operations team
 3. Backup verification (PostgreSQL restore tested)
@@ -661,21 +712,25 @@ terragrunt destroy
 After successful deployment:
 
 1. **Configure Custom Domain** (optional):
+
    - Update DNS A record to point to Container Apps FQDN
    - Configure custom domain in Container Apps
    - Verify managed certificate provisioning
 
 2. **Set Up Monitoring Alerts**:
+
    - CPU/memory utilization alerts
    - Failed request alerts
    - Database connection failures
 
 3. **Configure CI/CD**:
+
    - GitHub Actions workflow for automated deployments
    - OIDC authentication for GitHub Actions
    - Environment protection rules
 
 4. **Database Migrations**:
+
    - Run Phoenix database migrations
    - Seed initial data (if applicable)
 
@@ -691,6 +746,7 @@ After successful deployment:
 **Related Documents**: plan.md, architecture.md, research.md
 
 **Changelog**:
+
 - v1.2.0 (2026-01-21): Removed Azure Key Vault completely - using Container Apps secrets exclusively
 - v1.1.0 (2026-01-20): Updated Key Vault references to reflect optional configuration, added use_key_vault variable documentation
 - v1.0.0 (2026-01-15): Initial provisioning guide
