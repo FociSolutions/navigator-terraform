@@ -379,14 +379,17 @@ resource "azurerm_subnet" "postgres" {
 | **Retention** | 30 days                        | 90 days                        |
 | **Daily Cap** | 1 GB                           | 10 GB                          |
 
-### Application Insights (Conditional)
+### Application Insights (Future Enhancement)
 
-| Attribute            | Baseline (Dev) | Enhanced (Production)   |
-| -------------------- | -------------- | ----------------------- |
-| **Enabled**          | No             | Yes                     |
-| **Application Type** | N/A            | Web                     |
-| **Sampling**         | N/A            | 100% (no sampling)      |
-| **Workspace Link**   | N/A            | Linked to Log Analytics |
+**Status**: Removed from initial implementation scope
+
+Application Insights will be added in a future iteration for enhanced production monitoring. Initial deployments use Log Analytics Workspace for basic container logging and metrics.
+
+**Planned capabilities** (future):
+- Application Performance Monitoring (APM)
+- Distributed tracing
+- Custom metrics and telemetry
+- Smart detection and alerting
 
 ### Diagnostic Settings
 
@@ -487,11 +490,12 @@ resource "azurerm_subnet" "postgres" {
 | VNet                   | Standard                                                       | 1               | $2                       |
 | NAT Gateway (optional) | Standard                                                       | 1               | $35-45                   |
 | Log Analytics          | 5 GB/day ingestion, 90-day retention                           | 1               | $15-25                   |
-| Application Insights   | 5 GB/day ingestion                                             | 1               | $15-25                   |
 | ACR                    | Standard                                                       | 1               | $6.50                    |
-| **TOTAL**              |                                                                |                 | **$363.50-463.50/month** |
+| **TOTAL**              |                                                                |                 | **$348.50-438.50/month** |
 
-**With Azure Reservations** (1-year PostgreSQL commitment): **$285-395/month** (22-25% savings)
+**With Azure Reservations** (1-year PostgreSQL commitment): **$270-370/month** (22-25% savings)
+
+**Note**: Application Insights removed from initial scope (future enhancement). Cost estimates reflect Log Analytics only.
 
 ---
 
@@ -513,12 +517,13 @@ resource "azurerm_subnet" "postgres" {
 
 ---
 
-**Document Version**: 1.2.0  
-**Last Updated**: January 21, 2026  
+**Document Version**: 1.3.0  
+**Last Updated**: January 23, 2026  
 **Related Documents**: plan.md, research.md, quickstart.md
 
 **Changelog**:
 
+- v1.3.0 (2026-01-23): Removed Application Insights from initial scope (moved to future enhancements), updated cost estimates
 - v1.2.0 (2026-01-21): Removed Azure Key Vault completely - using Container Apps secrets exclusively for secret management
 - v1.1.0 (2026-01-20): Updated Key Vault to optional configuration, added secrets management strategy details, updated NSG rules documentation, clarified DNS zone creation
 - v1.0.0 (2026-01-15): Initial architecture specification

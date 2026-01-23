@@ -1,5 +1,6 @@
 # Tasks: Navigator Azure Deployment
 
+**Date**: January 15, 2026 (Updated: January 23, 2026)  
 **Input**: Design documents from `/specs/001-navigator-deploy/`
 **Prerequisites**: plan.md (required), spec.md (required)
 
@@ -28,10 +29,10 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [x] T003 Create terraform/azure/templates/ directory for Container Apps environment variable templates
 - [x] T004 [P] Create terraform/azure/versions.tf with Terraform >= 1.9 and azurerm ~> 4.0 constraints
 - [x] T005 [P] Create terraform/azure/provider.tf with Azure provider configuration and features block
-- [x] T006 [P] Create terraform/azure/variables.tf with all configurable input variables including enable_application_insights (bool), enable_auto_shutdown (bool), enable_zone_redundancy (bool), enable_outbound_internet (bool, default: true), create_google_auth (bool), create_azure_ad_b2c (bool), create_azure_openai (bool), create_storage_account (bool), plus environment, location, container CPU/memory, min/max replicas, postgres_sku, postgres_storage_gb, postgres_ha_enabled, backup_retention_days, domain_name
+- [x] T006 [P] Create terraform/azure/variables.tf with all configurable input variables including authentication variables (google_client_id, google_client_secret, microsoft_client_id, microsoft_client_secret, microsoft_tenant_id - all optional string type with default null), enable_auto_shutdown (bool), enable_zone_redundancy (bool), enable_outbound_internet (bool, default: true), create_azure_openai (bool), create_storage_account (bool), plus environment, location, container CPU/memory, min/max replicas, postgres_sku, postgres_storage_gb, postgres_ha_enabled, backup_retention_days, domain_name
 - [x] T007 [P] Create terraform/azure/outputs.tf with key infrastructure outputs (Container Apps URL, PostgreSQL FQDN, DNS zone name servers)
-- [x] T008 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", remote_state config for navtfstatedev, inputs block with: container_cpu=0.25, container_memory=0.5Gi, min_replicas=0, max_replicas=2, postgres_sku=B_Standard_B1ms, postgres_storage_gb=32, postgres_ha_enabled=false, backup_retention_days=7, enable_application_insights=false, enable_auto_shutdown=true, enable_zone_redundancy=false, domain_name=navigator-dev.demo.focisolutions.com, enable_outbound_internet=true, create_google_auth=false, create_azure_ad_b2c=true, create_azure_openai=false)
-- [x] T009 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (source = "../..//azure", remote_state config for navtfstateprod, inputs block with: container_cpu=0.5, container_memory=1.0Gi, min_replicas=1, max_replicas=10, postgres_sku=GP_Standard_D2s_v3, postgres_storage_gb=128, postgres_ha_enabled=true, backup_retention_days=14, enable_application_insights=true, enable_auto_shutdown=false, enable_zone_redundancy=true, domain_name=navigator.demo.focisolutions.com, enable_outbound_internet=true, create_google_auth=true, create_azure_ad_b2c=false, create_azure_openai=false)
+- [x] T008 [P] Create terraform/env/dev/terragrunt.hcl with dev environment configuration (source = "../..//azure", remote_state config for navtfstatedev, inputs block with: container_cpu=0.25, container_memory=0.5Gi, min_replicas=0, max_replicas=2, postgres_sku=B_Standard_B1ms, postgres_storage_gb=32, postgres_ha_enabled=false, backup_retention_days=7, enable_auto_shutdown=true, enable_zone_redundancy=false, domain_name=navigator-dev.demo.focisolutions.com, enable_outbound_internet=true, create_azure_openai=false)
+- [x] T009 [P] Create terraform/env/production/terragrunt.hcl with production environment configuration (source = "../..//azure", remote_state config for navtfstateprod, inputs block with: container_cpu=0.5, container_memory=1.0Gi, min_replicas=1, max_replicas=10, postgres_sku=GP_Standard_D2s_v3, postgres_storage_gb=128, postgres_ha_enabled=true, backup_retention_days=14, enable_auto_shutdown=false, enable_zone_redundancy=true, domain_name=navigator.demo.focisolutions.com, enable_outbound_internet=true, create_azure_openai=false)
 - [x] T010 Run `cd terraform/env/dev && terragrunt init` to initialize backend and download providers (requires Azure authentication: `az login --scope https://management.azure.com//.default` and RBAC roles: Contributor on resource groups, Storage Blob Data Contributor on state storage - see spec.md Dependencies section)
 - [x] T011 Run `cd terraform/env/dev && terragrunt validate` - setup checkpoint (requires T010 to complete first)
 
@@ -96,7 +97,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [x] T039b Implement session affinity using azapi_resource_action in terraform/azure/container-apps.tf (type="Microsoft.App/containerApps@2024-03-01", set stickySessions.affinity="sticky" for Phoenix LiveView WebSocket persistence, depends_on azurerm_container_app.navigator)
 - [x] T040 Configure health probes in terraform/azure/container-apps.tf: liveness_probe (type=http, path="/", port=4000, initial_delay=10, period=30, timeout=5, failure_threshold=3), startup_probe (type=http, path="/", port=4000, period=10, failure_threshold=30 for 5min startup allowance)
 - [x] T041 Create system-assigned managed identity for Container App in terraform/azure/container-apps.tf
-- [x] T042 Configure container environment variables and secrets in terraform/azure/container-apps.tf: secrets block with DATABASE_URL (from PostgreSQL connection string local value), SECRET_KEY_BASE (from random_password resource), plus static env vars PORT=4000, PHX_HOST from ingress FQDN
+- [x] T042 Configure container environment variables and secrets in terraform/azure/container-apps.tf: secrets block with DATABASE_URL (from PostgreSQL connection string local value), SECRET_KEY_BASE (from random_password resource), plus dynamic secrets using for_each for optional authentication (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET - when var.google_client_id != null; MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID - when var.microsoft_client_id != null), static env vars PORT=4000, PHX_HOST from ingress FQDN, and dynamic env blocks referencing secrets conditionally
 - [x] T043 [P] Create terraform/azure/acr.tf with conditional Azure Container Registry (count = var.create_acr ? 1 : 0, sku conditional on environment: Basic for dev/Standard for production, admin_enabled=false, public_network_access_enabled conditional, georeplications=[], retention_policy for untagged manifests 30 days)
 - [x] T044 [P] Grant Container App managed identity AcrPull role for ACR in terraform/azure/identity.tf (conditional on var.create_acr)
 
@@ -111,15 +112,17 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Checkpoint**: Compute and data tier complete - application tier can now be configured
 
-**Secret Management Note**: Auto-generated secrets (PostgreSQL password, SECRET_KEY_BASE) are created using Terraform `random_password` resources, stored in Terraform state, and injected directly into Container Apps secrets. Injected secrets (OAuth credentials, API keys) are passed as Terraform input variables during manual deployment and stored as Container Apps secrets.
+**Secret Management Note**: Auto-generated secrets (PostgreSQL password, SECRET_KEY_BASE) are created using Terraform `random_password` resources, stored in Terraform state, and injected directly into Container Apps secrets. Injected secrets (OAuth credentials: Google OAuth via TF_VAR_google_client_id/TF_VAR_google_client_secret, Microsoft Entra ID via TF_VAR_microsoft_client_id/TF_VAR_microsoft_client_secret/TF_VAR_microsoft_tenant_id) are passed as Terraform input variables using TF_VAR_ environment variable prefix during manual deployment and stored as Container Apps secrets using dynamic blocks.
 
 ---
 
 ## Phase 4: Application Tier
 
-**Purpose**: DNS, monitoring, alerting, authentication configuration, and optional NAT gateway
+**Purpose**: DNS configuration and optional Azure OpenAI service integration
 
 **Dependencies**: Requires Compute & Data Tier (Phase 3) to be complete
+
+**Note on Authentication**: Google OAuth and Microsoft Entra ID authentication are configured via Container Apps environment variables (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID) set in Phase 3 Task T042. No additional Terraform resources required - the Navigator application handles authentication natively via these environment variables. See navigator/README.md lines 87-114 for supported authentication providers.
 
 ### DNS Configuration (Conditional on var.domain_name)
 
@@ -130,29 +133,16 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [x] T053 Configure conditional Container Apps custom domain binding in terraform/azure/dns.tf (count = var.domain_name != null ? 1 : 0, using azurerm_container_app_custom_domain resource with lifecycle ignore_changes for managed certificate fields)
 - [x] T054 Configure conditional Container Apps Managed Certificate for custom domain in terraform/azure/dns.tf (count = var.domain_name != null ? 1 : 0, Azure Managed Certificate with automatic HTTP validation, TXT record for domain verification)
 
-### Monitoring & Alerting
+### Azure OpenAI Integration (Optional)
 
-- [ ] T055 [P] Create terraform/azure/monitoring.tf with conditional Application Insights (count = var.enable_application_insights ? 1 : 0, application_type=web, workspace_id from Log Analytics, sampling_percentage=100 for no sampling, retention_in_days conditional on environment)
-- [ ] T056 [P] Configure Application Insights connection to Container Apps Environment in terraform/azure/monitoring.tf (dapr_ai_instrumentation_key conditional on enable_application_insights)
-- [ ] T057 [P] Create terraform/azure/alerts.tf with conditional monitoring alert rules (count = var.enable_application_insights ? 1 : 0): high CPU alert (>80% for 5 min), high memory alert (>80%), database connection failures, Container Apps HTTP 5xx errors
-- [ ] T058 [P] Configure alert action groups in terraform/azure/alerts.tf (email notifications, webhook for incident management integration)
-
-### Authentication & External Services
-
-- [ ] T059 [P] Create terraform/azure/auth-b2c.tf for conditional Azure AD B2C configuration (count = var.create_azure_ad_b2c ? 1 : 0) with placeholder for tenant configuration
-- [ ] T060 [P] Create terraform/azure/auth-google.tf for conditional Google OAuth configuration (count = var.create_google_auth ? 1 : 0) with variables for client_id and client_secret, stored as Container Apps secrets
-- [ ] T061 [P] Create terraform/azure/auth-openai.tf with conditional Azure OpenAI Cognitive Account (count = var.create_azure_openai ? 1 : 0, kind=OpenAI, sku_name conditional on environment, custom_subdomain_name, network_acls conditional)
-- [ ] T062 [P] Store Azure OpenAI API key and endpoint as Container Apps secrets in terraform/azure/auth-openai.tf (conditional on var.create_azure_openai, passed as input variables)
-
-### Optional NAT Gateway
-
-- [ ] T063 [P] Create conditional NAT Gateway in terraform/azure/vnet.tf (count = var.create_nat_gateway ? 1 : 0 where create_nat_gateway defaults to false, optional even for production, provides consistent outbound IP for allowlisting)
-- [ ] T064 [P] Create public IP for NAT Gateway in terraform/azure/vnet.tf (conditional on var.create_nat_gateway)
-- [ ] T065 [P] Associate NAT Gateway with Container Apps subnet in terraform/azure/vnet.tf (conditional on var.create_nat_gateway)
-- [ ] T066 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
-- [ ] T067 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
+- [ ] T055 [P] Create terraform/azure/auth-openai.tf with conditional Azure OpenAI Cognitive Account (count = var.create_azure_openai ? 1 : 0, kind=OpenAI, sku_name conditional on environment, custom_subdomain_name, network_acls conditional)
+- [ ] T056 [P] Store Azure OpenAI API key and endpoint as Container Apps secrets in terraform/azure/auth-openai.tf (conditional on var.create_azure_openai, passed as input variables)
+- [ ] T057 Run `cd terraform/env/dev && terragrunt validate` - application tier checkpoint
+- [ ] T058 Run `cd terraform/env/dev && terragrunt plan` to preview application tier changes
 
 **Checkpoint**: Application tier complete - infrastructure ready for polish and final validation
+
+**Future Scope**: Monitoring & Alerting (Application Insights, alert rules, action groups) and Optional NAT Gateway will be added in a future iteration.
 
 ---
 
@@ -162,35 +152,33 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 ### Code Quality
 
-- [ ] T068 Run `terraform fmt -recursive` in terraform/azure/ to format all .tf files
-- [ ] T069 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
-- [ ] T070 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
-- [ ] T071 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/` to identify security issues
-- [ ] T072 [P] Review Trivy findings and remediate HIGH/CRITICAL issues or add #trivy:ignore comments with business justification (AVD-AZU-0047 for unrestricted HTTPS inbound on public web app, AVD-AZU-0051 for conditional outbound internet access for OpenAI API - see plan.md Security Compliance section)
+- [ ] T059 Run `terraform fmt -recursive` in terraform/azure/ to format all .tf files
+- [ ] T060 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
+- [ ] T061 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
+- [ ] T062 [P] Run `tflint --chdir terraform/azure` to identify linting issues and fix any warnings or errors
+- [ ] T063 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/` to identify security issues
+- [ ] T064 [P] Review Trivy findings and remediate HIGH/CRITICAL issues or add #trivy:ignore comments with business justification (AVD-AZU-0047 for unrestricted HTTPS inbound on public web app, AVD-AZU-0051 for conditional outbound internet access for OpenAI API - see plan.md Security Compliance section)
 
 ### Resource Tagging & Outputs
 
-- [ ] T073 [P] Add comprehensive resource tags to all resources in terraform/azure/\*.tf files (Environment from var.environment, CostCenter=navigator, Project=valentine, ManagedBy=terraform)
-- [ ] T074 [P] Update terraform/azure/outputs.tf with all infrastructure outputs: container_app_fqdn, container_app_url, postgres_fqdn, postgres_connection_string (sensitive=true), dns_zone_name_servers (for manual NS record configuration), log_analytics_workspace_id, application_insights_instrumentation_key (conditional)
-- [ ] T075 [P] Add output descriptions and mark sensitive outputs appropriately in terraform/azure/outputs.tf
+- [ ] T065 [P] Add comprehensive resource tags to all resources in terraform/azure/\*.tf files (Environment from var.environment, CostCenter=navigator, Project=valentine, ManagedBy=terraform)
+- [ ] T066 [P] Update terraform/azure/outputs.tf with all infrastructure outputs: container_app_fqdn, container_app_url, postgres_fqdn, postgres_connection_string (sensitive=true), dns_zone_name_servers (for manual NS record configuration), log_analytics_workspace_id
+- [ ] T067 [P] Add output descriptions and mark sensitive outputs appropriately in terraform/azure/outputs.tf
 
 ### Documentation
 
-- [ ] T076 [P] Create terraform/azure/README.md with module documentation: purpose, architecture overview, variables reference table, outputs reference table, usage examples for dev and production deployments, conditional resources explanation (Application Insights, auto-shutdown, ACR, Storage, NAT Gateway), secret management approach (Container Apps secrets)
-- [ ] T077 [P] Create terraform/env/dev/README.md with dev environment deployment instructions: prerequisites checklist (reference plan.md Infrastructure Prerequisites section), terragrunt init/plan/apply commands, manual secret population steps for injected secrets, validation steps
-- [ ] T078 [P] Create terraform/env/production/README.md with production deployment guide: prerequisites checklist, deployment approval workflow, terragrunt commands, environment promotion strategy (dev → staging → production), rollback procedures
-- [ ] T079 [P] Create .gitignore in repository root with entries: **/.terraform/, **/.terragrunt-cache/, **/\*.tfstate, **/_.tfstate._, **/\*.tfvars (sensitive), **/\*.tfplan, **/crash.log, **/override.tf, **/override.tf.json, **/.terraform.lock.hcl should be committed (remove from ignore if present)
-- [ ] T080 [P] Update root README.md with infrastructure overview section: prerequisite infrastructure requirements (resource groups: navigator-dev-rg and navigator-prod-rg, state storage: navigator-tfstate-rg with navtfstatedev and navtfstateprod accounts), deployment strategy (manual via Terragrunt), links to terraform/env/\*/README.md files
-- [ ] T081 [P] Document manual post-deployment steps in root README.md: DNS name server configuration at domain registrar (use output from dns_zone_name_servers), secret population for injected secrets (OAuth, API keys), Azure Defender for Cloud configuration (optional)
+- [ ] T068 [P] Create .gitignore in repository root with entries: **/.terraform/, **/.terragrunt-cache/, **/\*.tfstate, **/_.tfstate._, **/\*.tfvars (sensitive), **/\*.tfplan, **/crash.log, **/override.tf, **/override.tf.json, **/.terraform.lock.hcl should be committed (remove from ignore if present)
+- [ ] T069 [P] Update root README.md with infrastructure overview section: prerequisite infrastructure requirements (resource groups: navigator-dev-rg and navigator-prod-rg, state storage: navigator-tfstate-rg with navtfstatedev and navtfstateprod accounts), deployment strategy (manual via Terragrunt), links to terraform/env/\*/README.md files
+- [ ] T070 [P] Document manual post-deployment steps in root README.md: DNS name server configuration at domain registrar (use output from dns_zone_name_servers), secret population for injected secrets (OAuth, API keys), Azure Defender for Cloud configuration (optional)
 
 ### Final Validation
 
-- [ ] T082 Run `cd terraform/env/dev && terragrunt plan -out=dev.tfplan` to generate final dev plan
-- [ ] T083 Verify dev plan shows expected resources: VNet with 3 subnets, Container Apps Environment and App, PostgreSQL Flexible Server with database, Log Analytics Workspace, DNS zone, NSGs, private DNS zones, conditional resources based on variables (Application Insights only if enable_application_insights=true, etc.)
-- [ ] T084 Run `cd terraform/env/production && terragrunt plan -out=prod.tfplan` to generate production plan
-- [ ] T085 Verify production plan differences from dev: zone-redundant PostgreSQL HA, higher SKUs, Application Insights enabled, auto-shutdown disabled, different domain name, conditional resources match production variables
-- [ ] T086 Final validation: Run `cd terraform/env/production && terragrunt validate` and confirm no errors
-- [ ] T087 Document deployment command sequence in root README.md: (1) cd terraform/env/dev, (2) terragrunt plan, (3) terragrunt apply, (4) manual testing and validation, (5) cd terraform/env/production, (6) terragrunt plan, (7) terragrunt apply with explicit approval
+- [ ] T071 Run `cd terraform/env/dev && terragrunt plan -out=dev.tfplan` to generate final dev plan
+- [ ] T072 Verify dev plan shows expected resources: VNet with 3 subnets, Container Apps Environment and App, PostgreSQL Flexible Server with database, Log Analytics Workspace, DNS zone, NSGs, private DNS zones, conditional resources based on variables
+- [ ] T073 Run `cd terraform/env/production && terragrunt plan -out=prod.tfplan` to generate production plan
+- [ ] T074 Verify production plan differences from dev: zone-redundant PostgreSQL HA, higher SKUs, auto-shutdown disabled, different domain name, conditional resources match production variables
+- [ ] T075 Final validation: Run `cd terraform/env/production && terragrunt validate` and confirm no errors
+- [ ] T076 Document deployment command sequence in root README.md: (1) cd terraform/env/dev, (2) terragrunt plan, (3) terragrunt apply, (4) manual testing and validation, (5) cd terraform/env/production, (6) terragrunt plan, (7) terragrunt apply with explicit approval
 
 ---
 
@@ -217,10 +205,11 @@ Tasks are organized by infrastructure tier in the phase structure below
 
 **Validation Checkpoints:**
 
-- Run `terragrunt validate` after each tier completes (T011, T023, T049, T066, T069-T070)
-- Run `terragrunt plan` before marking tier complete (T050, T067, T082, T084)
-- Formatting checks (`terraform fmt`) in Polish phase (T068)
-- Security scanning (Trivy) in Polish phase (T071-T072)
+- Run `terragrunt validate` after each tier completes (T011, T023, T049, T057, T060-T061)
+- Run `terragrunt plan` before marking tier complete (T050, T058, T071, T073)
+- Formatting checks (`terraform fmt`) in Polish phase (T059)
+- Linting checks (`tflint`) in Polish phase (T062)
+- Security scanning (Trivy) in Polish phase (T063-T064)
 
 ### Parallel Opportunities
 
@@ -297,9 +286,9 @@ Tasks are organized by infrastructure tier in the phase structure below
 3. **VALIDATE**: Run `terragrunt validate` to verify configuration syntax
 4. Complete Phase 3: Compute & Data Tier (create secrets.tf, postgresql.tf, container-apps.tf, acr.tf, storage.tf)
 5. **VALIDATE**: Run `terragrunt validate` after compute tier
-6. Complete Phase 4: Application Tier (create dns.tf, monitoring.tf, alerts.tf, auth-\*.tf)
+6. Complete Phase 4: Application Tier (create dns.tf, auth-openai.tf for optional Azure OpenAI integration)
 7. **VALIDATE**: Run `terragrunt validate` after application tier
-8. Complete Phase 5: Polish (formatting, documentation, security scanning, final validation)
+8. Complete Phase 5: Polish (formatting, linting, documentation, security scanning, final validation)
 9. Final validation with `terragrunt validate` and `terragrunt plan`
 
 **Note**: Implementation generates IaC code files only. Actual infrastructure deployment (terragrunt apply) is outside the scope of this task framework and requires manual execution per deployment strategy.
@@ -312,9 +301,9 @@ When multiple team members work on IaC code:
 2. Once Network tier files complete, parallelize within tiers:
    - Team member A: Container Apps infrastructure (container-apps.tf, acr.tf)
    - Team member B: Database and secrets (postgresql.tf, secrets.tf)
-   - Team member C: Storage and monitoring (storage.tf, monitoring.tf, alerts.tf)
+   - Team member C: Storage (storage.tf)
 3. Validate at tier boundaries before proceeding to next tier
-4. Application tier can be parallelized across DNS, monitoring, authentication
+4. Application tier: DNS configuration and optional Azure OpenAI integration
 
 ---
 
@@ -329,12 +318,10 @@ When multiple team members work on IaC code:
 - `postgres_sku = "B_Standard_B1ms"`, `postgres_storage_gb = 32`
 - `postgres_ha_enabled = false` (single-zone)
 - `backup_retention_days = 7`
-- `enable_application_insights = false` (basic monitoring only)
 - `enable_auto_shutdown = true` (evenings/weekends cost savings)
 - `enable_zone_redundancy = false`
 - `domain_name = "navigator-dev.demo.focisolutions.com"`
 - `enable_outbound_internet = true`
-- `create_google_auth = false`, `create_azure_ad_b2c = true`
 - `create_azure_openai = false`, `create_storage_account = false` (optional)
 
 **Production Environment** (`terraform/env/production/terragrunt.hcl`):
@@ -344,12 +331,10 @@ When multiple team members work on IaC code:
 - `postgres_sku = "GP_Standard_D2s_v3"`, `postgres_storage_gb = 128`
 - `postgres_ha_enabled = true` (zone-redundant HA)
 - `backup_retention_days = 14`
-- `enable_application_insights = true` (APM and distributed tracing)
 - `enable_auto_shutdown = false`
 - `enable_zone_redundancy = true`
 - `domain_name = "navigator.demo.focisolutions.com"`
 - `enable_outbound_internet = true`
-- `create_google_auth = true`, `create_azure_ad_b2c = false`
 - `create_azure_openai = false` (conditional), `create_storage_account = false` (optional)
 
 ### Manual Deployment Workflow
@@ -382,7 +367,7 @@ When multiple team members work on IaC code:
 
 6. **Post-deployment steps**:
    - Update domain registrar NS records to point to Azure DNS name servers (from dns_zone_name_servers output)
-   - Populate injected secrets (OAuth credentials, API keys) if applicable
+   - Set authentication credentials as TF_VAR_ environment variables (TF_VAR_google_client_id, TF_VAR_microsoft_client_id, etc.) if using OAuth providers
    - Configure Azure Defender for Cloud (optional, post-deployment manual configuration)
 
 ---
@@ -391,8 +376,8 @@ When multiple team members work on IaC code:
 
 - [P] tasks = different files, no dependencies within same tier
 - Tasks organized by infrastructure tier following dependency hierarchy
-- Run `terragrunt validate` at tier boundaries to catch syntax errors early (T011, T023, T049, T066, T069-T070)
-- Run `terragrunt plan` before marking major tiers complete (T050, T067, T082, T084)
+- Run `terragrunt validate` at tier boundaries to catch syntax errors early (T011, T023, T049, T057, T060-T061)
+- Run `terragrunt plan` before marking major tiers complete (T050, T058, T071, T073)
 - Commit after each tier or logical group of resources
 - Stop at checkpoints to validate configuration
 - All paths relative to repository root
@@ -404,8 +389,9 @@ When multiple team members work on IaC code:
 **Container Apps Secrets Approach** (Direct injection, no Key Vault)
 
 - Auto-generated secrets: random_password resources → Terraform state → Container Apps secrets
-- Injected secrets: Terraform input variables → Container Apps secrets
-- Cost: $0, Simplicity: High, Rotation: Re-run terragrunt apply
+- Injected secrets: TF_VAR_ environment variables → Terraform input variables → Container Apps secrets (dynamic blocks)
+- Authentication: Google OAuth (TF_VAR_google_client_id/secret), Microsoft Entra ID (TF_VAR_microsoft_client_id/secret/tenant_id)
+- Cost: $0, Simplicity: High, Rotation: Update TF_VAR_ values, re-run terragrunt apply
 - Container Apps secrets: Encrypted by Azure platform, accessible only to running app instances
 
 ### Conditional Resources
@@ -413,37 +399,41 @@ When multiple team members work on IaC code:
 Resources created only when feature flag enabled (using `count` expressions):
 
 - **DNS Zone and Custom Domain**: `count = var.domain_name != null ? 1 : 0` (skips DNS when domain_name is null/unspecified)
-- **Application Insights**: `count = var.enable_application_insights ? 1 : 0`
 - **Auto-shutdown schedules**: `count = var.enable_auto_shutdown ? 1 : 0`
 - **Azure Container Registry**: `count = var.create_acr ? 1 : 0`
 - **Storage Account**: `count = var.create_storage_account ? 1 : 0`
-- **Google OAuth**: `count = var.create_google_auth ? 1 : 0`
-- **Azure AD B2C**: `count = var.create_azure_ad_b2c ? 1 : 0`
 - **Azure OpenAI**: `count = var.create_azure_openai ? 1 : 0`
-- **NAT Gateway**: `count = var.create_nat_gateway ? 1 : 0`
+
+**Removed from scope (future enhancements)**:
+- Application Insights and monitoring alerts
+- NAT Gateway
+- Azure AD B2C Terraform resources (authentication handled via Container Apps env vars)
+- Google OAuth Terraform resources (authentication handled via Container Apps env vars)
 
 ---
 
 ## Task Summary
 
-**Total Tasks**: 89
+**Total Tasks**: 81
 
 **Task Count by Phase**:
 
 - Phase 1 (Setup): 11 tasks
 - Phase 2 (Network Tier): 12 tasks
 - Phase 3 (Compute & Data Tier): 29 tasks
-- Phase 4 (Application Tier): 17 tasks
-- Phase 5 (Polish): 20 tasks
+- Phase 4 (Application Tier): 8 tasks
+- Phase 5 (Polish): 21 tasks
 
-**Parallel Opportunities Identified**: 41 tasks marked [P] can run in parallel within their respective phases
+**Parallel Opportunities Identified**: 36 tasks marked [P] can run in parallel within their respective phases
 
-**Validation Checkpoints**: 8 checkpoints (T011 Setup, T023 Network, T049-T050 Compute/Data, T066-T067 Application, T069-T070 Polish, T082-T086 Final)
+**Validation Checkpoints**: 8 checkpoints (T011 Setup, T023 Network, T049-T050 Compute/Data, T057-T058 Application, T060-T061 Polish, T071-T075 Final)
 
 **Environment Order**: dev → production (manual deployment via terragrunt commands)
 
 **Format Validation**: ✅ All tasks follow checklist format (checkbox, ID, [P] marker where applicable, file paths)
 
-**Conditional Resources**: 9 feature flags controlling optional infrastructure components (DNS, Application Insights, ACR, Storage, OAuth, OpenAI, NAT Gateway, Auto-shutdown)
+**Conditional Resources**: 5 feature flags controlling optional infrastructure components (DNS, ACR, Storage, Azure OpenAI, Auto-shutdown)
 
 **Secret Management**: Direct Container Apps secrets approach (no Key Vault required)
+
+**Future Scope**: Monitoring & Alerting (Application Insights, alert rules, action groups) and Optional NAT Gateway will be added in a future iteration

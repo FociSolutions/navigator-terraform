@@ -119,6 +119,12 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 - Uses Azure Managed Identities for Container Apps to access Azure resources (no stored credentials)
 - Never commits secrets in code or .tfvars files (gitignored)
 
+**Authentication Configuration**:
+- Google OAuth and Microsoft Entra ID authentication are configured via Container Apps environment variables
+- Required variables: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID
+- No Terraform resources required - Navigator application handles authentication natively via these environment variables
+- See navigator/README.md lines 87-114 for supported authentication providers
+
 ### Implementation Approaches
 
 **Configuration-Driven Environment Strategy** ✅
@@ -300,18 +306,19 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
    - Phoenix SECRET_KEY_BASE (generated cryptographically via `random_password`)
    - Storage: Terraform state file (encrypted at rest in Azure Storage Account)
 
-2. **Injected Secrets** (provided at deployment time):
-   - Azure OpenAI API key and endpoint (if using Azure OpenAI, conditional)
-   - Google OAuth client ID and secret (if using Google auth, conditional)
-   - Microsoft OAuth credentials (if using Azure AD B2C, conditional)
-   - Storage: Passed as Terraform input variables during manual deployment
+2. **Injected Secrets** (provided at deployment time via TF_VAR_ environment variables):
+   - Google OAuth: `TF_VAR_google_client_id`, `TF_VAR_google_client_secret` (optional)
+   - Microsoft Entra ID: `TF_VAR_microsoft_client_id`, `TF_VAR_microsoft_client_secret`, `TF_VAR_microsoft_tenant_id` (optional)
+   - Storage: Passed as Terraform input variables using TF_VAR_ prefix pattern
+   - Note: Azure OpenAI is provisioned as Terraform-managed infrastructure (auth-openai.tf), not injected secrets
 
 **Container Apps Secret Injection**:
 
 - Auto-generated secrets: Retrieved from Terraform state, injected into Container Apps secrets
-- Injected secrets: Passed as Terraform input variables, stored as Container Apps secrets
+- Injected secrets: Passed via TF_VAR_ environment variables, stored as Container Apps secrets using dynamic blocks
 - Environment variables: Reference Container Apps secrets (e.g., `secretRef: "db-conn-str"`)
-- Secret rotation: Update Terraform variables → re-run `terragrunt apply` → Container Apps restarts with new secrets
+- Conditional secrets: Only created when TF_VAR_ variables are provided (using `dynamic "secret"` blocks)
+- Secret rotation: Update TF_VAR_ values → re-run `terragrunt apply` → Container Apps restarts with new secrets
 - Container Apps secrets: Encrypted by Azure platform, accessible only to running app instances
 
 **Security Considerations**:
@@ -356,31 +363,37 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 
 **Configuration Differences** (Terragrunt `inputs` block):
 
-| Parameter                     | Dev                                  | Staging                      | Production                       |
-| ----------------------------- | ------------------------------------ | ---------------------------- | -------------------------------- |
-| `container_cpu`               | 0.25 vCPU                            | 0.5 vCPU                     | 0.5 vCPU                         |
-| `container_memory`            | 0.5 GB                               | 1.0 GB                       | 1.0 GB                           |
-| `min_replicas`                | 0 (scale to zero)                    | 1                            | 1                                |
-| `max_replicas`                | 2                                    | 5                            | 10                               |
-| `postgres_sku`                | Burstable B1ms                       | General Purpose D2s_v3       | General Purpose D4s_v3           |
-| `postgres_storage_gb`         | 32 GB                                | 64 GB                        | 128 GB                           |
-| `postgres_ha_enabled`         | false                                | true                         | true                             |
-| `postgres_require_ssl`        | false                                | false                        | true (optional)                  |
-| `backup_retention_days`       | 7                                    | 14                           | 14                               |
-| `enable_application_insights` | false                                | true                         | true                             |
-| `enable_auto_shutdown`        | true (evenings/weekends)             | false                        | false                            |
-| `enable_zone_redundancy`      | false                                | true                         | true                             |
-| `domain_name`                 | navigator-dev.demo.focisolutions.com | navigator-staging.cds-snc.ca | navigator.demo.focisolutions.com |
-| `enable_outbound_internet`    | true                                 | true                         | true                             |
-| `create_google_auth`          | false (Azure AD B2C)                 | false (Azure AD B2C)         | true (Google OAuth)              |
-| `create_azure_ad_b2c`         | true                                 | true                         | false                            |
+| Parameter                  | Dev                                  | Staging                      | Production                       |
+| -------------------------- | ------------------------------------ | ---------------------------- | -------------------------------- |
+| `container_cpu`            | 0.25 vCPU                            | 0.5 vCPU                     | 0.5 vCPU                         |
+| `container_memory`         | 0.5 GB                               | 1.0 GB                       | 1.0 GB                           |
+| `min_replicas`             | 0 (scale to zero)                    | 1                            | 1                                |
+| `max_replicas`             | 2                                    | 5                            | 10                               |
+| `postgres_sku`             | Burstable B1ms                       | General Purpose D2s_v3       | General Purpose D4s_v3           |
+| `postgres_storage_gb`      | 32 GB                                | 64 GB                        | 128 GB                           |
+| `postgres_ha_enabled`      | false                                | true                         | true                             |
+| `postgres_require_ssl`     | false                                | false                        | true (optional)                  |
+| `backup_retention_days`    | 7                                    | 14                           | 14                               |
+| `enable_auto_shutdown`     | true (evenings/weekends)             | false                        | false                            |
+| `enable_zone_redundancy`   | false                                | true                         | true                             |
+| `domain_name`              | navigator-dev.demo.focisolutions.com | navigator-staging.cds-snc.ca | navigator.demo.focisolutions.com |
+| `enable_outbound_internet` | true                                 | true                         | true                             |
+| `create_azure_openai`      | false                                | false                        | false (optional)                 |
+| `create_storage_account`   | false                                | false                        | false (optional)                 |
 
 **Conditional Resource Creation** (using Terraform `count` expressions in shared module):
 
-- `count = var.enable_application_insights ? 1 : 0` - Application Insights for production monitoring
+- `count = var.domain_name != null ? 1 : 0` - DNS Zone and Custom Domain (skips DNS when domain_name is null/unspecified)
 - `count = var.enable_auto_shutdown ? 1 : 0` - Auto-shutdown schedules for dev cost savings
-- `count = var.create_google_auth ? 1 : 0` - Google OAuth integration for production
-- `count = var.create_azure_ad_b2c ? 1 : 0` - Azure AD B2C for dev/staging authentication
+- `count = var.create_acr ? 1 : 0` - Azure Container Registry (optional)
+- `count = var.create_storage_account ? 1 : 0` - Storage Account for user uploads (optional)
+- `count = var.create_azure_openai ? 1 : 0` - Azure OpenAI Cognitive Services (optional)
+
+**Removed from scope (future enhancements)**:
+- Application Insights and monitoring alerts (Log Analytics remains for basic container logging)
+- NAT Gateway (optional for production - consistent outbound IP for allowlisting)
+- Azure AD B2C Terraform resources (authentication handled via Container Apps env vars)
+- Google OAuth Terraform resources (authentication handled via Container Apps env vars)
 
 **State Isolation**:
 
@@ -403,12 +416,30 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
 **Manual Deployment Commands**:
 
 ```bash
-# Development environment
+# Minimal deployment (no authentication)
 cd terraform/env/dev
-terragrunt plan    # Review changes before applying
-terragrunt apply   # Deploy infrastructure
+terragrunt plan
+terragrunt apply
 
-# Production environment
+# Deployment with Google OAuth
+export TF_VAR_google_client_id="123456789.apps.googleusercontent.com"
+export TF_VAR_google_client_secret="GOCSPX-..."
+cd terraform/env/dev
+terragrunt plan
+terragrunt apply
+
+# Deployment with Microsoft Entra ID
+export TF_VAR_microsoft_client_id="abcd1234-5678-90ef-ghij-klmnopqrstuv"
+export TF_VAR_microsoft_client_secret="secret~..."
+export TF_VAR_microsoft_tenant_id="tenant-uuid"
+cd terraform/env/dev
+terragrunt plan
+terragrunt apply
+
+# Production deployment (with authentication)
+export TF_VAR_microsoft_client_id="..."
+export TF_VAR_microsoft_client_secret="..."
+export TF_VAR_microsoft_tenant_id="..."
 cd terraform/env/production
 terragrunt plan    # Review production changes
 terragrunt apply   # Deploy to production (requires explicit approval)
@@ -419,7 +450,7 @@ terragrunt apply   # Deploy to production (requires explicit approval)
 - Azure CLI authenticated with appropriate subscription
 - Terraform and Terragrunt installed locally
 - Access to Terraform state storage (Storage Blob Data Contributor role)
-- Injected secrets prepared (OAuth credentials, API keys if applicable)
+- Authentication credentials prepared as TF_VAR_ environment variables (if using OAuth providers)
 
 **Note**: CI/CD automation (GitHub Actions, Azure DevOps) is out of scope for initial implementation. Manual deployment provides explicit control and approval workflow. CI/CD can be added as future enhancement.
 
@@ -583,21 +614,20 @@ terraform/
 ├── azure/                          # Shared Terraform module (infrastructure definitions)
 │   ├── versions.tf                 # Terraform and provider version constraints
 │   ├── provider.tf                 # Azure provider configuration
-│   ├── variables.tf                # Input variable declarations
+│   ├── variables.tf                # Input variable declarations (includes auth variables)
 │   ├── outputs.tf                  # Output value declarations
-│   ├── vnet.tf                     # Virtual Network, subnets, NSGs
-│   ├── container-apps.tf           # Container Apps Environment and Navigator app
-│   ├── postgresql.tf               # PostgreSQL Flexible Server (includes random_password for credentials)
-│   ├── dns.tf                      # Azure DNS zone and records
-│   ├── monitoring.tf               # Application Insights, Log Analytics (conditional)
+│   ├── locals.tf                   # Local values for naming and shared configuration
+│   ├── vnet.tf                     # Virtual Network, subnets, Service Endpoints
+│   ├── dns-private.tf              # Private DNS zones for PostgreSQL
+│   ├── security.tf                 # Network Security Groups, subnet associations
 │   ├── identity.tf                 # Managed Identities, RBAC role assignments
-│   ├── security.tf                 # Network Security Groups, Private Endpoints
-│   ├── storage.tf                  # Storage Account (optional, for user uploads)
-│   ├── auth-b2c.tf                 # Azure AD B2C configuration (conditional)
-│   ├── auth-google.tf              # Google OAuth configuration (conditional)
-│   ├── auth-openai.tf              # Azure OpenAI Cognitive Services (conditional)
-│   └── templates/
-│       └── container-env.json      # Container Apps environment variables template
+│   ├── secrets.tf                  # Random passwords for PostgreSQL, Phoenix SECRET_KEY_BASE
+│   ├── postgresql.tf               # PostgreSQL Flexible Server with database
+│   ├── container-apps.tf           # Container Apps Environment and Navigator app (dynamic auth secrets)
+│   ├── acr.tf                      # Azure Container Registry (conditional)
+│   ├── storage.tf                  # Storage Account for user uploads (conditional)
+│   ├── dns.tf                      # Azure DNS zone and custom domain binding (conditional)
+│   └── auth-openai.tf              # Azure OpenAI Cognitive Services (conditional)
 │
 └── env/                            # Environment-specific configurations (Terragrunt)
     ├── dev/
@@ -633,9 +663,11 @@ README.md                           # Root project documentation
 
 - `versions.tf`: Terraform >= 1.9, azurerm ~> 4.0 version constraints
 - `provider.tf`: Azure provider with subscription_id, features {} block
+- `variables.tf`: All input variables including authentication (google_*, microsoft_*)
+- `container-apps.tf`: Dynamic secrets and environment variables using `dynamic "secret"` and `dynamic "env"` blocks
 - Service-specific files: Group related resources (vnet.tf contains VNet, subnets, NSGs; container-apps.tf contains environment and app)
 - Conditional resources: Use `count = var.create_<feature> ? 1 : 0` pattern for environment-specific features
-- Templates: Container environment variables, startup scripts if needed
+- Authentication secrets: Conditional using `for_each = var.google_client_id != null ? [1] : []` pattern
 
 **Terragrunt Configuration**:
 
@@ -667,11 +699,11 @@ README.md                           # Root project documentation
 - Virtual Network, subnets, and Network Security Groups
 - Container Apps secrets for sensitive configuration (no Key Vault required)
 - Managed Identities and RBAC role assignments
-- DNS configuration (Azure DNS zone)
-- Monitoring and logging (Application Insights, Log Analytics)
-- Authentication configuration (Azure AD B2C or Google OAuth)
+- DNS configuration (Azure DNS zone, custom domain with managed certificates)
+- Basic monitoring and logging (Log Analytics Workspace for container logs)
+- Authentication configuration via Container Apps environment variables (no Terraform resources)
 - Manual deployment workflow using Terragrunt
-- Optional: Azure Container Registry, Storage Account
+- Optional: Azure Container Registry, Storage Account, Azure OpenAI
 
 ### Out of Scope (Prerequisites)
 
@@ -686,7 +718,8 @@ README.md                           # Root project documentation
 - Automated deployment workflows
 - GitHub OIDC integration for service principals
 - Multi-region deployment or disaster recovery
-- Advanced monitoring/observability beyond Application Insights
+- Application Insights and advanced monitoring/alerting (beyond basic Log Analytics)
+- Optional NAT Gateway for consistent outbound IP (allowlisting scenarios)
 
 ### Deployment Prerequisites Checklist
 

@@ -1,6 +1,6 @@
 # Navigator Azure Infrastructure Provisioning Guide
 
-**Date**: January 15, 2026 (Updated: January 20, 2026)  
+**Date**: January 15, 2026 (Updated: January 23, 2026)  
 **Branch**: `001-navigator-deploy`  
 **Purpose**: Step-by-step guide for provisioning Navigator infrastructure on Azure
 
@@ -107,6 +107,32 @@ az role assignment list --assignee $(az account show --query user.name -o tsv) -
 
 - **Manual Creation**: Create resource groups and state storage manually via Azure Portal or CLI
 - **Bootstrap Script**: Run a separate bootstrap Terraform configuration (out of scope for this guide)
+
+### 4. Authentication Secrets (Optional)
+
+**Note**: Authentication is configured via Container Apps environment variables, **NOT** Terraform resources. The Navigator application handles Google OAuth and Microsoft Entra ID natively.
+
+**Prepare authentication credentials** (if using OAuth providers):
+
+**Google OAuth** (optional):
+```bash
+export TF_VAR_google_client_id="123456789.apps.googleusercontent.com"
+export TF_VAR_google_client_secret="GOCSPX-..."
+```
+
+**Microsoft Entra ID** (optional):
+```bash
+export TF_VAR_microsoft_client_id="abcd1234-5678-90ef-ghij-klmnopqrstuv"
+export TF_VAR_microsoft_client_secret="secret~..."
+export TF_VAR_microsoft_tenant_id="tenant-uuid"
+```
+
+**How to obtain credentials**:
+
+- **Google OAuth**: Create OAuth 2.0 credentials in [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+- **Microsoft Entra ID**: Register application in [Azure Portal → Entra ID → App Registrations](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps)
+
+**Minimal deployment** (no authentication): Skip setting `TF_VAR_` variables. Navigator will run without OAuth providers.
 
 ---
 
@@ -230,7 +256,26 @@ terragrunt plan -out=tfplan
 
 Deploy infrastructure to Azure:
 
+**Option 1: Minimal Deployment (No Authentication)**:
+
 ```bash
+terragrunt apply tfplan
+```
+
+**Option 2: Deployment with Google OAuth**:
+
+```bash
+export TF_VAR_google_client_id="123456789.apps.googleusercontent.com"
+export TF_VAR_google_client_secret="GOCSPX-..."
+terragrunt apply tfplan
+```
+
+**Option 3: Deployment with Microsoft Entra ID**:
+
+```bash
+export TF_VAR_microsoft_client_id="abcd1234-5678-90ef-ghij-klmnopqrstuv"
+export TF_VAR_microsoft_client_secret="secret~..."
+export TF_VAR_microsoft_tenant_id="tenant-uuid"
 terragrunt apply tfplan
 ```
 
@@ -335,7 +380,6 @@ inputs = {
   backup_retention_days     = 14
 
   # Features
-  enable_application_insights = true
   enable_zone_redundancy      = true
   enable_auto_shutdown        = false
 
@@ -349,8 +393,9 @@ inputs = {
 - Larger SKUs (more vCPU, memory)
 - Zone-redundant high availability enabled
 - Longer backup retention (14 days vs 7 days)
-- Application Insights enabled for monitoring
 - No auto-shutdown (24/7 availability)
+
+**Note**: Application Insights removed from initial scope (future enhancement). Log Analytics provides basic monitoring.
 
 ### Step 3: Initialize and Validate
 
@@ -379,10 +424,10 @@ terragrunt plan -out=tfplan
 
 - ✅ PostgreSQL has zone-redundant HA enabled
 - ✅ Container Apps min replicas = 1 (always available)
-- ✅ Application Insights enabled
 - ✅ Backup retention = 14 days
 - ✅ Lifecycle prevent_destroy = true for critical resources
-- ✅ Cost estimate reviewed (~$240-405/month)
+- ✅ Cost estimate reviewed (~$240-350/month)
+- ✅ Authentication credentials prepared as TF_VAR_ environment variables (if using OAuth)
 
 ### Step 6: Apply with Manual Approval
 
@@ -398,6 +443,11 @@ terragrunt plan -out=tfplan
 **Manual Deployment** (if not using GitHub Actions):
 
 ```bash
+# Set authentication credentials (if using OAuth)
+export TF_VAR_microsoft_client_id="..."
+export TF_VAR_microsoft_client_secret="..."
+export TF_VAR_microsoft_tenant_id="..."
+
 # ONLY run this after thorough plan review
 terragrunt apply tfplan
 ```
@@ -498,10 +548,7 @@ az monitor log-analytics query \
   --out table
 ```
 
-**Application Insights** (production only):
-
-- Navigate to Azure Portal → Application Insights → navigator-prod
-- Review: Live Metrics, Application Map, Performance, Failures
+**Note**: Application Insights removed from initial scope (future enhancement). Use Log Analytics for basic monitoring.
 
 ---
 
