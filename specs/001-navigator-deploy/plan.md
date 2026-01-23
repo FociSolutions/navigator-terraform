@@ -240,10 +240,12 @@ This plan aligns with Navigator Azure Infrastructure Principles (v3.0.0) as foll
   - Domain registrar NS records must point to Azure DNS name servers (manual post-deployment configuration step)
 - A Record: Points to Container Apps environment default domain or Application Gateway public IP
 - TLS Certificates:
-  - Baseline (Dev): Container Apps Managed Certificates (free, automatic renewal)
-  - Enhanced (Production): App Gateway Managed Certificates or Container Apps Managed Certificates
-  - Validation: DNS validation (automated via Azure DNS integration)
+  - Type: Container Apps Managed Certificates (free, automatic renewal via DigiCert)
+  - Implementation: 4-step workflow using hybrid azapi + azurerm providers
+  - Validation: HTTP validation for apex domains, automated via Azure DNS
+  - Provisioning: 10-20 minutes for certificate issuance and binding
   - Enforcement: HTTPS-only ingress, HTTP redirects to HTTPS
+  - Details: See architecture.md Section 7 and research.md for implementation workflow
 
 **Outbound Connectivity**
 

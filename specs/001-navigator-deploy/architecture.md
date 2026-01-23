@@ -332,20 +332,39 @@ resource "azurerm_subnet" "postgres" {
 
 ### DNS Zone
 
-**Implementation**: DNS zones created by Terraform as part of infrastructure deployment
+| Attribute      | Baseline (Dev)                         | Enhanced (Production)              |
+| -------------- | -------------------------------------- | ---------------------------------- |
+| **Zone Name**  | `navigator-dev.demo.focisolutions.com` | `navigator.demo.focisolutions.com` |
+| **A Record**   | Points to Container Apps static IP     | Points to Container Apps static IP |
+| **TXT Record** | `asuid.{domain}` for verification      | `asuid.{domain}` for verification  |
 
-| Attribute     | Baseline (Dev)                                                           | Enhanced (Production)                           |
-| ------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| **Zone Name** | `navigator-dev.demo.focisolutions.com`                                   | `navigator.demo.focisolutions.com`              |
-| **A Record**  | Points to Container Apps default domain or Application Gateway public IP | Points to Container Apps or Application Gateway |
+**Post-Deployment**: Update domain registrar NS records to point to Azure DNS name servers
 
-### TLS Certificates
+### TLS Certificates and Custom Domain Binding
 
-| Method               | Baseline (Dev)                            | Enhanced (Production)                                                 |
-| -------------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| **Certificate Type** | Container Apps Managed Certificate (free) | Container Apps Managed Certificate or App Gateway Managed Certificate |
-| **Validation**       | DNS validation (automated)                | DNS validation (automated)                                            |
-| **Renewal**          | Automatic                                 | Automatic                                                             |
+**Implementation Approach**: Custom domain binding uses a 4-step workflow due to azurerm provider limitations with Azure-managed certificates. The azurerm provider lacks native support for creating managed certificates, requiring the azapi provider to call Azure REST APIs directly.
+
+| Step | Resource                                 | Purpose                    |
+| ---- | ---------------------------------------- | -------------------------- |
+| 1    | `azurerm_container_app_custom_domain`    | Initial domain binding     |
+| 2    | `azapi_resource` (managed certificate)   | Create managed certificate |
+| 3    | `azapi_resource_action` (when="apply")   | Bind certificate via PATCH |
+| 4    | `azapi_resource_action` (when="destroy") | Cleanup on destroy         |
+
+**Certificate Specifications**:
+
+| Attribute              | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| **Certificate Type**   | Azure-managed (DigiCert CA)                  |
+| **Validation Method**  | HTTP (for apex domains)                      |
+| **Renewal**            | Automatic                                    |
+| **Provisioning Time**  | 10-20 minutes (includes DigiCert validation) |
+| **API Version**        | `managedCertificates@2024-03-01`             |
+| **Required Providers** | azurerm ~> 4.0, azapi ~> 2.0                 |
+
+**Terraform Files**: `terraform/azure/dns.tf`
+
+**Implementation Details and Troubleshooting**: See research.md → "Azure Container Apps Managed Certificates" section for complete implementation code, troubleshooting procedures, and migration from failed deployments.
 
 ---
 

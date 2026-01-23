@@ -1449,9 +1449,34 @@ resource "azurerm_container_app_custom_domain" "main" {
 **Implementation** (terraform/azure/dns.tf):
 
 ```hcl
-# T053: Azure Managed Certificate for Custom Domain
-# Uses azapi provider because azurerm_container_app_environment_certificate only supports
-# user-provided certificates (PFX/PEM) and Key Vault certificates, not Azure-managed certificates
+# T053: Add custom domain to Container App (STEP 1: Initial binding without certificate)
+# This satisfies Azure's requirement that the domain must be bound to the container app
+# before a managed certificate can be created for it
+# See: https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510
+resource "azurerm_container_app_custom_domain" "main" {
+  count = var.domain_name != null ? 1 : 0
+
+  name             = var.domain_name
+  container_app_id = azurerm_container_app.navigator.id
+
+  # DNS records must exist for domain verification before binding
+  depends_on = [
+    azurerm_dns_a_record.container_app,
+    azurerm_dns_txt_record.verification
+  ]
+
+  # Azure will populate certificate fields asynchronously, ignore changes to prevent resource recreation
+  lifecycle {
+    ignore_changes = [
+      certificate_binding_type,
+      container_app_environment_certificate_id,
+    ]
+  }
+}
+
+# T054: Create Azure Managed Certificate (STEP 2: Certificate creation)
+# Now that the custom domain is bound to the container app, Azure allows certificate creation
+# This resource creates a free managed certificate with automatic renewal by Azure
 resource "azapi_resource" "managed_certificate" {
   count = var.domain_name != null ? 1 : 0
 
@@ -1460,22 +1485,20 @@ resource "azapi_resource" "managed_certificate" {
   parent_id = azurerm_container_app_environment.main.id
   location  = var.location
 
-  body = jsonencode({
+  body = {
     properties = {
       subjectName             = var.domain_name
       domainControlValidation = "HTTP"  # HTTP validation for apex domains with A records
     }
-  })
+  }
 
+  # CRITICAL: Custom domain must be added to container app FIRST
+  # Otherwise Azure returns: RequireCustomHostnameInEnvironment error
   depends_on = [
-    azurerm_dns_a_record.container_app,
-    azurerm_dns_txt_record.verification
+    azurerm_container_app_custom_domain.main
   ]
 
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Name        = "managed-certificate-${var.domain_name}"
-  })
+  response_export_values = ["*"]
 
   timeouts {
     create = "20m"  # Certificate provisioning takes 10-15 minutes for DigiCert validation
@@ -1483,18 +1506,61 @@ resource "azapi_resource" "managed_certificate" {
   }
 }
 
-# T054: Bind custom domain to Container App with managed certificate
-# Uses native azurerm resource for type-safe configuration
-resource "azurerm_container_app_custom_domain" "main" {
+# T055: Bind managed certificate to custom domain (STEP 3: Certificate binding on apply)
+# Uses azapi_resource_action to PATCH the container app's ingress configuration
+# This updates the existing custom domain binding to use the managed certificate
+resource "azapi_resource_action" "bind_certificate" {
   count = var.domain_name != null ? 1 : 0
 
-  container_app_id                         = azurerm_container_app.navigator.id
-  name                                     = var.domain_name
-  container_app_environment_certificate_id = azapi_resource.managed_certificate[0].id
-  certificate_binding_type                 = "SniEnabled"
+  resource_id = azurerm_container_app.navigator.id
+  type        = "Microsoft.App/containerApps@2024-03-01"
+  method      = "PATCH"
+  when        = "apply"  # Execute during terraform apply
+
+  body = {
+    properties = {
+      configuration = {
+        ingress = {
+          customDomains = [
+            {
+              bindingType   = "SniEnabled"
+              name          = var.domain_name
+              certificateId = azapi_resource.managed_certificate[0].output.id
+            }
+          ]
+        }
+      }
+    }
+  }
 
   depends_on = [
     azapi_resource.managed_certificate
+  ]
+}
+
+# T056: Unbind custom domain on destroy (STEP 4: Cleanup on terraform destroy)
+# Removes custom domain binding before deleting the certificate
+# This prevents deletion errors when tearing down infrastructure
+resource "azapi_resource_action" "unbind_certificate" {
+  count = var.domain_name != null ? 1 : 0
+
+  resource_id = azurerm_container_app.navigator.id
+  type        = "Microsoft.App/containerApps@2024-03-01"
+  method      = "PATCH"
+  when        = "destroy"  # Execute during terraform destroy
+
+  body = {
+    properties = {
+      configuration = {
+        ingress = {
+          customDomains = []
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    azurerm_container_app_custom_domain.main
   ]
 }
 ```
@@ -1521,15 +1587,51 @@ resource "azurerm_container_app_custom_domain" "main" {
 - Certificate issuance and binding: 1-2 minutes
 - **Total**: 10-20 minutes on first deployment
 
-### Advantages of Hybrid Approach
+### Why This 4-Step Approach is Required
 
-| Aspect | Hybrid Approach | Pure azapi Approach | Pure azurerm Approach |
-|--------|----------------|-------------------|---------------------|
-| **Certificate Creation** | ✅ azapi_resource | ✅ azapi_resource_action | ❌ Not supported |
-| **Domain Binding** | ✅ azurerm native resource | ⚠️ azapi PATCH operations | ✅ azurerm native resource |
-| **Type Safety** | ✅ Typed binding resource | ❌ JSON body encoding | ✅ Fully typed |
-| **State Management** | ✅ Clean resource state | ⚠️ Action-based state | ❌ Doesn't work |
-| **Code Complexity** | ✅ 2 resources | ⚠️ 3 resources | ❌ 1 resource (broken) |
+**The Problem**: Azure Container Apps has a dependency requirement that is not well-supported by the azurerm Terraform provider:
+
+1. **Azure API Requirement**: Managed certificates can only be created for domains that are ALREADY bound to a container app
+2. **Terraform Provider Limitation**: The `azurerm_container_app_custom_domain` resource cannot create a binding without a certificate, and automatically trigger certificate creation
+3. **Solution**: Multi-step workflow using a hybrid azurerm + azapi approach
+
+**Why Can't We Use Fewer Resources?**
+
+| Approach | Why It Doesn't Work |
+|----------|---------------------|
+| **Single `azurerm_container_app_custom_domain` only** | Azure doesn't automatically create managed certificates; you get a domain without HTTPS |
+| **Create certificate first, then bind domain** | Azure returns `RequireCustomHostnameInEnvironment` error - certificate creation requires domain to exist first |
+| **Two `azurerm_container_app_custom_domain` resources** | Terraform state conflict - can't have two resources managing the same custom domain |
+| **Circular dependency (domain refs cert, cert depends on domain)** | Terraform plan fails - circular dependency detected |
+
+**Why This 4-Step Approach Works:**
+
+| Step | Resource | Purpose | Why Necessary |
+|------|----------|---------|---------------|
+| **1** | `azurerm_container_app_custom_domain` | Add domain to container app | ✅ Satisfies Azure's prerequisite for certificate creation |
+| **2** | `azapi_resource` (managed certificate) | Create managed certificate | ✅ Now allowed by Azure since domain exists |
+| **3** | `azapi_resource_action` when="apply" | Bind certificate via PATCH | ✅ Updates domain with cert (azurerm can't do this) |
+| **4** | `azapi_resource_action` when="destroy" | Unbind before cleanup | ✅ Prevents deletion errors |
+
+**Comparison to Alternative Approaches:**
+
+| Aspect | GitHub 4-Step Solution | Pure azapi (3+ resources) | Pure azurerm (ideal) |
+|--------|----------------------|-------------------------|---------------------|
+| **Works with Azure API** | ✅ Yes | ✅ Yes | ❌ Not supported |
+| **Uses native azurerm where possible** | ✅ Yes (step 1) | ❌ No | ✅ Would be ideal |
+| **Type Safety** | ✅ Partial (step 1 typed) | ❌ All JSON | ✅ Would be fully typed |
+| **Destroy Cleanup** | ✅ Automatic (step 4) | ⚠️ Manual or complex | ✅ Would be automatic |
+| **Code Complexity** | ⚠️ 4 resources | ⚠️ 3-5 resources | ✅ 1-2 resources |
+| **Proven in Production** | ✅ Yes (12+ GitHub ❤️) | ⚠️ Various patterns | ❌ Doesn't work |
+
+**When Will This Improve?**
+
+This workaround is necessary until HashiCorp adds native managed certificate support to `azurerm_container_app_custom_domain`. Track progress at: https://github.com/hashicorp/terraform-provider-azurerm/issues/21866
+
+**Migration Path**: When azurerm adds native support, migration will be straightforward:
+1. Remove the 4 resources
+2. Add single `azurerm_container_app_custom_domain` with `managed_certificate = true` (hypothetical future attribute)
+3. Import existing domain binding into new resource
 
 ### Validation
 
@@ -1564,6 +1666,153 @@ Expected results:
 - HTTPS response: Valid SSL/TLS certificate
 - Issuer: DigiCert
 
+### Troubleshooting Common Issues
+
+**Error: `RequireCustomHostnameInEnvironment`**
+
+```
+ERROR CODE: RequireCustomHostnameInEnvironment
+MESSAGE: Creating managed certificate requires hostname 'example.com' added as a
+custom hostname to a container app or route in environment 'my-env'
+```
+
+**Cause**: Attempting to create managed certificate before adding custom domain to container app
+
+**Solution**: Ensure correct dependency order in Terraform:
+1. `azurerm_container_app_custom_domain` must create successfully FIRST
+2. `azapi_resource.managed_certificate` depends on the custom domain resource
+3. Check `terraform show` output to verify custom domain exists before certificate creation
+
+**Recovery**:
+```bash
+# Remove failed certificate from Terraform state
+terraform state rm 'azapi_resource.managed_certificate[0]'
+
+# Re-apply with correct dependencies
+terragrunt apply
+```
+
+---
+
+**Error: Certificate stuck in `Pending` state**
+
+**Cause**: DigiCert cannot reach your domain for HTTP validation
+
+**Check**:
+```bash
+# Verify DNS resolution
+dig +short <your-domain>
+
+# Test HTTP accessibility from internet (DigiCert validation)
+curl -I http://<your-domain>
+
+# Check Container Apps environment static IP
+az containerapp env show \
+  --name <env-name> \
+  --resource-group <rg-name> \
+  --query "properties.staticIp" -o tsv
+```
+
+**Common Issues**:
+- DNS A record not yet propagated (wait 5-15 minutes)
+- A record pointing to wrong IP address
+- NSG blocking HTTP access (port 80 must be open during validation)
+- CAA record blocking DigiCert (add `0 issue digicert.com` CAA record)
+
+---
+
+**Error: Domain binding shows certificate ID but HTTPS doesn't work**
+
+**Cause**: Certificate binding not applied via `azapi_resource_action`
+
+**Check**:
+```bash
+# Verify certificate is bound to domain
+az containerapp show \
+  --name <app-name> \
+  --resource-group <rg-name> \
+  --query "properties.configuration.ingress.customDomains" \
+  --output json
+
+# Look for:
+# {
+#   "name": "your-domain.com",
+#   "bindingType": "SniEnabled",  # Should be SniEnabled, not Disabled
+#   "certificateId": "/subscriptions/.../managedCertificates/..."
+# }
+```
+
+**Solution**: Ensure `azapi_resource_action.bind_certificate` executed successfully
+```bash
+# Check Terraform state for azapi_resource_action
+terraform state show 'azapi_resource_action.bind_certificate[0]'
+
+# Re-apply if missing
+terragrunt apply
+```
+
+---
+
+**Error: Destroy fails with certificate deletion error**
+
+**Cause**: Certificate still bound to custom domain during destruction
+
+**Solution**: The `azapi_resource_action.unbind_certificate` with `when = "destroy"` should handle this automatically
+
+**Manual Cleanup** (if automated cleanup fails):
+```bash
+# Remove custom domain binding first
+az containerapp hostname delete \
+  --hostname <your-domain> \
+  --name <app-name> \
+  --resource-group <rg-name>
+
+# Then delete managed certificate
+az containerapp env certificate delete \
+  --name <cert-name> \
+  --environment <env-name> \
+  --resource-group <rg-name> \
+  --managed-certificates-only
+
+# Remove from Terraform state
+terraform state rm 'azapi_resource.managed_certificate[0]'
+terraform state rm 'azurerm_container_app_custom_domain.main[0]'
+```
+
+---
+
+**Migration from Existing Failed Deployment**
+
+If you previously attempted the 2-step approach (create cert first, then bind domain) and it failed:
+
+```bash
+# Step 1: Clean up failed state
+terraform state rm 'azapi_resource.managed_certificate[0]' 2>/dev/null || true
+terraform state rm 'azurerm_container_app_custom_domain.main[0]' 2>/dev/null || true
+
+# Step 2: Manually remove any partially created resources from Azure
+# Check for managed certificate
+az containerapp env certificate list \
+  --name <env-name> \
+  --resource-group <rg-name> \
+  --managed-certificates-only \
+  --output table
+
+# If certificate exists, delete it
+az containerapp env certificate delete \
+  --name <cert-name> \
+  --environment <env-name> \
+  --resource-group <rg-name> \
+  --managed-certificates-only
+
+# Step 3: Update dns.tf with 4-step GitHub solution
+
+# Step 4: Apply with clean state
+terragrunt apply
+```
+
+---
+
 ### Prerequisites Checklist
 
 Before deploying managed certificates:
@@ -1578,14 +1827,17 @@ Before deploying managed certificates:
 
 ### References
 
-- **Microsoft Learn**: https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates
+- **Microsoft Learn - Managed Certificates**: https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates
 - **Azure API Reference**: https://learn.microsoft.com/en-us/rest/api/containerapps/managed-certificates
-- **GitHub Issue #796** (Container Apps managed certs): https://github.com/microsoft/azure-container-apps/issues/796
-- **Terraform azurerm Provider**: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_custom_domain
-- **Terraform azapi Provider**: https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/azapi_resource
+- **GitHub Issue #21866** (azurerm provider - managed certificate support): https://github.com/hashicorp/terraform-provider-azurerm/issues/21866
+- **Working Solution** (comment #2455147510): https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510
+- **Terraform azurerm_container_app_custom_domain**: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_custom_domain
+- **Terraform azapi_resource**: https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/azapi_resource
+- **Terraform azapi_resource_action**: https://registry.terraform.io/providers/azure/azapi/latest/docs/resources/azapi_resource_action
 
 ---
 
-**Document Version**: 1.1.0  
+**Document Version**: 1.2.0  
 **Last Updated**: January 23, 2026  
+**Key Updates**: Corrected custom domain managed certificate approach using proven 4-step GitHub solution (#21866)  
 **Research Sources**: Microsoft Learn, Azure Well-Architected Framework, Azure Verified Modules, Terraform Registry, Azure Container Apps GitHub Issues
