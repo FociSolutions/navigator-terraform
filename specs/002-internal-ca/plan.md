@@ -3,554 +3,288 @@
 **Branch**: `002-internal-ca` | **Date**: 2026-01-25 | **Spec**: [spec.md](./spec.md)
 **Input**: Infrastructure specification from `/specs/002-internal-ca/spec.md`
 
-**Note**: This template is filled in by the `/iac.plan` command. For deep research, module specs, and quickstart guide, run `/iac.enrichplan` after planning.
+**Note**: This plan implements a secure reverse proxy architecture by converting existing publicly exposed Container Apps to internal-only access with Application Gateway as the public entry point. For deep research, module specs, and quickstart guide, run `/iac.enrichplan` after planning.
 
 ## Summary
 
-This plan implements a defense-in-depth security architecture for the Navigator application by converting the existing publicly exposed Azure Container Apps deployment to an internal-only configuration with external traffic routed through Azure Application Gateway. The Application Gateway will serve as a reverse proxy providing SSL/TLS termination, Web Application Firewall capabilities, centralized traffic management, and WebSocket support for Phoenix LiveView real-time features. This architecture eliminates direct internet exposure of the container application while maintaining public accessibility through a managed, secure entry point.
+This architecture secures the existing Navigator application deployment by converting the Container Apps environment from public to internal-only ingress and routing all external traffic through Azure Application Gateway as a reverse proxy. The implementation provides defense-in-depth security, centralized SSL/TLS termination, optional Web Application Firewall protection, and maintains WebSocket support for Phoenix LiveView real-time features. The infrastructure leverages existing VNet resources where possible and adds Application Gateway with backend health probes, session affinity, and network security group restrictions to enforce internal-only access patterns.
 
 ## Technical Context
 
-**Cloud Provider**: Microsoft Azure  
-**IaC Tool**: Terraform 1.8+ (recommended: upgrade to 1.9+ for production)  
+**Cloud Provider**: Microsoft Azure (Canada Central region)
+**IaC Tool**: Terraform >= 1.8.0 (Terraform >= 1.9+ recommended for production)
 **Provider Versions**:
-- azurerm (hashicorp/azurerm) ~> 4.0 (stable: 4.58.0 - recommended: >= 4.58, < 5.0)
-- azapi (Azure/azapi) ~> 2.0 (for session affinity configuration)
-- random (hashicorp/random) ~> 3.0
+- hashicorp/azurerm >= 4.0, < 5.0 (use ~> 4.58 for latest stable features)
+- Azure/azapi ~> 2.0 (for session affinity configuration)
+- hashicorp/random ~> 3.0 (for secret generation)
 
 **Module Versions**:
-- Azure/avm-res-network-applicationgateway/azurerm = 0.4.3 (Azure Verified Module - recommended for Application Gateway)
+- Azure/avm-res-network-applicationgateway/azurerm = 0.4.3 (Azure Verified Module - OPTIONAL, user preference for existing resources)
+- Direct resource definitions preferred per project principles (Prefer Resource Simplicity)
 
-**Curated Modules**: Azure Verified Modules (AVM) - Microsoft-maintained, production-ready modules with comprehensive testing  
-**State Backend**: Azure Blob Storage with state locking (managed by Terragrunt)  
-**Environment Strategy**: Terragrunt-based configuration with environment-specific .hcl files (dev, production)  
-**Testing**: terraform validate, terraform test  
-**Security Scanning**: trivy config terraform/ (REQUIRED - no HIGH/CRITICAL findings)  
-**Cost Estimation**: Azure Pricing Calculator  
-**Target Environments**: dev, production (no staging in current setup)  
-**Compliance**: Government of Canada security controls (ITSG-33 alignment), TLS 1.2+ requirement, defense-in-depth architecture
+**Curated Modules**: Azure Verified Modules (AVM) available but not required per user request to prefer existing resources
+**State Backend**: Azure Blob Storage with Terragrunt orchestration (configured in terraform/env/{dev,production}/terragrunt.hcl)
+**Environment Strategy**: Terragrunt-based directory structure with environment-specific input files (dev, production)
+**Testing**: terraform test (.tftest.hcl files), manual validation of security posture
+**Security Scanning**: trivy config terraform/ (required for security validation)
+**Cost Estimation**: Azure Pricing Calculator (manual estimates for Application Gateway sizing)
+**Target Environments**: dev (minimal configuration), production (zone redundancy, enhanced capacity)
+**Compliance**: Government of Canada ITSG-33 alignment, defense-in-depth security requirements
 
 ## Principles Check
 
 ### Architecture Principles Alignment
 
-**✅ Prefer Managed Services**
-- Azure Application Gateway is a fully managed PaaS service providing automated patching, built-in availability, and compliance certifications
-- Avoids self-managed reverse proxy solutions (NGINX on VMs, custom load balancers)
-- Leverages managed WAF capabilities integrated with Application Gateway
-- Baseline (dev): Standard_v2 SKU with minimal WAF configuration
-- Enhanced (production): Standard_v2 SKU with zone redundancy, OWASP CRS WAF rules, auto-scaling
+**✅ Prefer Managed Services**: Application Gateway is a fully managed Azure PaaS service providing reverse proxy, SSL termination, and optional WAF capabilities without operational overhead. Meets baseline requirement for managed platform services.
 
-**✅ Design for Simplicity**
-- Single Application Gateway instance per environment (no multi-region complexity)
-- Direct backend pool configuration using Container Apps internal FQDN
-- Minimal routing rules (single backend, single frontend)
-- Baseline (dev): Single-instance gateway, basic health probes, no WAF enforcement
-- Enhanced (production): Zone-redundant gateway with auto-scaling, WAF detection mode initially
+**✅ Design for Simplicity**:
+- Baseline (Dev): Single Application Gateway instance (no zone redundancy), basic SKU tier (Standard_v2), minimal backend pool configuration
+- Enhanced (Production): Zone-redundant Application Gateway (Standard_v2 with availability zones), enhanced monitoring, production-grade capacity settings
 
-**✅ Design for Reliability and Resilience**
-- Application Gateway v2 provides built-in zone redundancy capability for production
-- Health probes ensure traffic only routes to healthy container instances
-- Session affinity (sticky sessions) maintains WebSocket connection stability
-- Zero-downtime deployment: Container Apps blue-green deployment preserves existing ingress during gateway setup
-- Baseline (dev): Single-zone gateway, basic health checks, manual failover acceptable
-- Enhanced (production): Zone-redundant gateway (3 availability zones), automated failover, comprehensive health monitoring
+**✅ Design for Reliability and Resilience**:
+- Baseline (Dev): Basic health probes every 30 seconds, single gateway instance acceptable for development workloads
+- Enhanced (Production): Zone-redundant deployment across availability zones, comprehensive health checks with 30-second intervals, backend pool supports auto-scaling Container Apps (2-10 replicas)
 
-**✅ Optimize for Cost**
-- Dev environment: Standard_v2 tier with minimum capacity units (2), no auto-scaling, no reserved capacity
-- Production: Standard_v2 tier with auto-scaling (2-10 capacity units), evaluate reserved capacity after 30-day usage baseline
-- WAF starts in detection mode (no additional compute cost) before enabling prevention mode
-- No CDN/Front Door layer (Application Gateway sufficient for internal tool requirements)
-- Baseline (dev): ~$150/month additional cost (Standard_v2, 2 capacity units)
-- Enhanced (production): ~$300-500/month (zone-redundant, auto-scaling, WAF enabled)
+**✅ Optimize for Cost**:
+- Baseline (Dev): Standard_v2 tier (smallest viable size), fixed capacity (no auto-scaling), WAF optional/disabled to reduce costs
+- Enhanced (Production): Right-sized Standard_v2 tier with auto-scaling (2-10 units), reserved capacity consideration for 12-month commitment
 
 ### IaC Code Principles Alignment
 
-**✅ Prefer Resource Simplicity**
-- Direct `azurerm_application_gateway` resource blocks for maximum transparency
-- Azure Verified Module considered but direct resources preferred for:
-  - Clear configuration visibility for security reviews
-  - Simplified debugging and troubleshooting
-  - Reduced abstraction layers (single resource vs module wrapper)
-- Module evaluation: AVM module adds 500+ lines of abstraction; direct resource ~150 lines
-- Decision: Use direct resources in baseline implementation; evaluate AVM for enhanced production if complexity grows
+**✅ Prefer Resource Simplicity**: User explicitly requested to prefer existing resources and avoid unnecessary modules. Plan uses direct `azurerm_application_gateway` resource definitions rather than Azure Verified Module wrapper. Module available as optional fallback if resource complexity increases.
 
-**✅ Automate Validation and Deployment**
-- `terraform validate` and `terraform fmt -check` required before commit
-- `trivy config terraform/` security scanning gate (no HIGH/CRITICAL findings)
-- Terragrunt plan generation on pull requests for peer review
-- Lifecycle controls: `prevent_destroy` on production Application Gateway
-- Deployment strategy: Dev first, validate WebSocket/session affinity, then production
-- CI/CD: Manual approval required for production gateway changes
+**✅ Automate Validation and Deployment**: Existing CI/CD patterns maintained. Plan requires `terraform validate`, `terraform fmt`, and `trivy config terraform/` checks before deployment. Testing in dev environment required before production rollout.
 
-**✅ Manage Secrets Securely**
-- No hardcoded credentials in Application Gateway configuration
-- SSL certificates managed via Azure Key Vault integration or Azure-managed certificates
-- Backend authentication (if required) uses managed identity for Container Apps
-- WAF logs contain no sensitive data (URL/headers only, no request bodies)
-- No secrets committed to version control (SSL certs, API keys excluded via .gitignore)
+**✅ Manage Secrets Securely**: SSL/TLS certificates stored in Azure Key Vault (existing resource). Application Gateway references certificates via managed identity access (no hardcoded credentials). NSG rules enforce least-privilege network access patterns.
 
-### Complexity Tracking
+### Deviation Justifications
 
-No principle violations requiring justification. All decisions align with baseline (dev) and enhanced (production) progressive complexity model.
+**None required**: All principles satisfied at appropriate complexity level for each environment tier.
 
 ## Infrastructure Architecture
 
-<!--
-  **CRITICAL TRANSITION POINT**: This is where generic requirements become cloud-specific.
-
-  The spec.md uses ONLY generic infrastructure terms (e.g., "managed database", "object storage").
-  THIS file (plan.md) translates them to cloud-specific services (e.g., "RDS PostgreSQL", "S3").
-
-  Translation Examples:
-  - spec.md: "managed relational database" → plan.md: "AWS RDS PostgreSQL 15.x" or "IBM Cloud Databases for PostgreSQL 15.x"
-  - spec.md: "object storage" → plan.md: "S3 bucket with versioning" or "Cloud Object Storage bucket"
-  - spec.md: "serverless compute" → plan.md: "Lambda functions (Node.js 18)" or "Code Engine applications"
-  - spec.md: "container orchestration" → plan.md: "EKS cluster v1.28" or "IBM Cloud Kubernetes Service"
-  - spec.md: "load balancer" → plan.md: "Application Load Balancer" or "VPC Load Balancer"
-  - spec.md: "virtual private network" → plan.md: "AWS VPC" or "IBM Cloud VPC"
-
-  During /iac.implement, AI agents will read this section to generate IaC files.
--->
-
 ### Compute Resources
 
-**Azure Application Gateway (Reverse Proxy)**
+**Application Gateway** (Reverse Proxy):
+- **Dev Environment**:
+  - SKU: Standard_v2 (smallest production-capable tier)
+  - Capacity: Fixed 1 instance (no auto-scaling for cost savings)
+  - Zone Redundancy: Disabled
+  - Frontend: Single public IP address with HTTPS listener (port 443)
+  - Backend Pool: Container Apps environment internal FQDN
+  - Health Probe: HTTP probe to `/` on port 4000, 30-second interval, 20-second timeout
+  - Session Affinity: Cookie-based affinity enabled for WebSocket persistence
+  - Request Routing: Basic rule from frontend listener to backend pool
 
-**SKU Configuration:**
-- **Dev**: Standard_v2 tier, 2 capacity units (fixed), single availability zone
-- **Production**: Standard_v2 tier, 2-10 capacity units (auto-scaling), zone-redundant (zones 1,2,3)
+- **Production Environment**:
+  - SKU: Standard_v2
+  - Capacity: Auto-scaling 2-10 instances based on request count and CPU metrics
+  - Zone Redundancy: Enabled (zones 1, 2, 3 for 99.99% SLA)
+  - Frontend: Single public IP address with HTTPS listener (port 443)
+  - Backend Pool: Container Apps environment internal FQDN (supports 2-10 backend instances)
+  - Health Probe: HTTP probe to `/` on port 4000, 30-second interval, 20-second timeout, 3 failure threshold
+  - Session Affinity: Cookie-based affinity enabled for WebSocket persistence
+  - Request Routing: Path-based routing rules (if needed for future multi-service scenarios)
+  - Header Rewrite: Inject `X-Forwarded-Host` header with original host value for OIDC redirect compatibility
 
-**Frontend Configuration:**
-- Public IP address: Standard SKU, static allocation, zone-redundant (production only)
-- HTTPS listener on port 443 (TLS 1.2 minimum version enforced)
-- HTTP listener on port 80 with redirect rule to HTTPS
-- Custom domain support via SSL certificate from Azure Key Vault or Azure-managed certificate
+**Web Application Firewall (Optional)**:
+- **All Environments**: WAF optional and configurable via `var.appgw_enable_waf` (user requested WAF not be immediate requirement)
+  - Same WAF configuration across dev and production for consistency
+  - If enabled: OWASP CRS 3.2 ruleset in Prevention or Detection mode
+  - Custom rules for IP allowlist/blocklist (if required)
+  - Request size limits and rate limiting policies
+- **Default**: WAF disabled (`appgw_enable_waf = false`) to reduce costs and complexity
 
-**Backend Pool:**
-- Target: Container App internal FQDN (`nav-{env}-cae.{region}.azurecontainerapps.io`)
-- Protocol: HTTPS (backend uses TLS even for internal traffic)
-- Port: 443 (Container Apps internal ingress standard port)
-
-**Health Probe:**
-- Protocol: HTTPS
-- Path: `/` (existing Container App health check endpoint)
-- Interval: 30 seconds
-- Timeout: 30 seconds
-- Unhealthy threshold: 3 consecutive failures
-- Host header: Matches backend FQDN to pass Container Apps routing
-
-**Session Affinity:**
-- Cookie-based affinity enabled (required for Phoenix LiveView WebSocket connections)
-- Cookie name: `ApplicationGatewayAffinity` (Azure default)
-- Cookie lifetime: Session-based (expires when browser closes)
-
-**Routing Rules:**
-- Single path-based rule: `/*` → backend pool (all traffic to Container App)
-- No complex routing (A/B testing, canary deployment out of scope)
-
-**WebSocket Support:**
-- Native WebSocket support in Application Gateway v2 (no additional configuration required)
-- HTTP upgrade headers (`Connection: Upgrade`, `Upgrade: websocket`) passed through automatically
-- Session affinity ensures WebSocket connections maintain server affinity
-
-**Auto-scaling (Production only):**
-- Minimum capacity: 2 units
-- Maximum capacity: 10 units
-- Scaling metric: Average compute units > 75% or Average capacity units > 60%
-
-**Azure Container Apps (Backend) - MODIFIED CONFIGURATION:**
-- **CRITICAL CHANGE**: Ingress `external_enabled` changed from `true` to `false`
-- Internal ingress only - no public endpoint
-- Internal FQDN: `nav-{env}.internal.{region}.azurecontainerapps.io`
-- Port: 4000 (unchanged - Application Gateway backend pool targets port 443, Container Apps handles TLS termination internally)
-- Existing scaling policies, health probes, session affinity remain unchanged
-- No changes to container image, environment variables, or application code
+**Container Apps** (Backend - Existing):
+- **Modification Required**: Hardcode ingress to `external_enabled = false` when Application Gateway is enabled (controlled by `var.enable_application_gateway`)
+- **Logic**: Use conditional expression: `external_enabled = var.enable_application_gateway ? false : true`
+- **No other changes**: Existing scaling, health probes, and container configuration unchanged
+- Container Apps will only accept traffic from Application Gateway subnet via private networking
 
 ### Data Storage
 
-**No changes required** - existing data storage infrastructure remains unchanged:
-
-**PostgreSQL Database:**
-- Azure Database for PostgreSQL Flexible Server
-- Private endpoint connectivity via VNet integration
-- Connection from Container Apps via internal networking (unchanged)
-- Backup retention: 30 days (dev), 90 days (production)
-
-**Azure Storage Account:**
-- General Purpose v2 storage for static assets (if applicable)
-- Private endpoint for secure access (existing configuration)
-- No changes required for Application Gateway integration
-
-**Application Gateway Logging/Diagnostics:**
-- Diagnostic logs sent to existing Log Analytics Workspace (nav-{env}-law)
-- Metrics: Request count, response time, backend health status, failed requests
-- WAF logs: Detection/prevention events, rule match details (when WAF enabled)
-- Access logs: Client IP, request URL, response status, latency
-- Retention aligned with Container Apps logs (30 days dev, 90 days production)
+**No changes to existing data storage**:
+- PostgreSQL Flexible Server: Continues operating on delegated subnet with private DNS integration
+- Azure Key Vault: Used for SSL/TLS certificate storage and Application Gateway managed identity access
+- Azure Storage Account: Unchanged (if configured)
+- Azure OpenAI: Unchanged (if configured)
 
 ### Networking
 
-**Existing VNet Configuration (unchanged):**
-- VNet: nav-{env}-vnet
-- Address space: 10.0.0.0/16
-- Location: Canada Central (or configured region)
+**Virtual Network** (Existing - Modified):
+- **VNet**: 10.240.0.0/16 (existing)
+- **Container Apps Subnet**: 10.240.1.0/24 (existing, delegated to Microsoft.App/environments)
+- **PostgreSQL Subnet**: 10.240.2.0/24 (existing, delegated to Microsoft.DBforPostgreSQL/flexibleServers)
+- **Application Gateway Subnet**: 10.240.3.0/24 (existing subnet already created, will be activated)
+  - Subnet delegation: None (Application Gateway does not use delegated subnets)
+  - Subnet NSG: MUST NOT have NSG attached (Azure platform limitation for Application Gateway)
+  - Service Endpoints: Microsoft.Storage (for diagnostic logs)
 
-**NEW: Application Gateway Subnet**
-- Subnet name: nav-{env}-agw-snet
-- Address prefix: 10.0.3.0/24 (already provisioned in existing infrastructure - see vnet.tf:59-66)
-- **CRITICAL**: Application Gateway subnet must NOT have Network Security Group attached (Azure platform limitation)
-- Service endpoints: Microsoft.Storage (for diagnostic logs)
-- Capacity: /24 provides 251 usable IPs (sufficient for auto-scaling up to 10 capacity units)
+**Public IP Address** (New):
+- **Dev**: Standard SKU, Static allocation, Single zone
+- **Production**: Standard SKU, Static allocation, Zone-redundant (zones 1,2,3)
+- DNS Label: `navigator-{environment}-appgw` (e.g., `navigator-dev-appgw.canadacentral.cloudapp.azure.com`)
 
-**Container Apps Subnet (EXISTING - modified ingress only):**
-- Subnet name: nav-{env}-ca-snet
-- Address prefix: 10.0.1.0/24 (existing)
-- Delegation: Microsoft.App/environments (unchanged)
-- Network Security Group: nav-{env}-ca-nsg (MODIFIED - see Security section)
+**Network Security Groups** (Modified):
+- **Container Apps NSG** (Automatically Modified when Application Gateway is enabled):
+  - **Remove**: Existing rule allowing 0.0.0.0/0 on port 443
+  - **Add**: Allow HTTPS (443) from Application Gateway subnet (10.240.3.0/24) ONLY
+  - **Add**: Allow HTTP (80) from Application Gateway subnet (10.240.3.0/24) for backend communication
+  - **Logic**: Conditional resource - NSG rules automatically updated when `var.enable_application_gateway = true`
+  - **Rationale**: Enforce defense-in-depth by restricting Container Apps to receive traffic only from Application Gateway
 
-**PostgreSQL Subnet (no changes):**
-- Subnet name: nav-{env}-db-snet
-- Address prefix: 10.0.2.0/24 (existing)
-- Network Security Group: nav-{env}-db-nsg (unchanged)
+- **Application Gateway Subnet**:
+  - **No NSG Allowed**: Azure Application Gateway requires subnet without NSG (platform requirement)
+  - Traffic control managed via Application Gateway's built-in firewall rules and WAF policies
 
-**Public IP Address (NEW - Application Gateway frontend):**
-- Name: nav-{env}-agw-pip
-- SKU: Standard (required for zone redundancy)
-- Allocation: Static
-- Zones: ["1","2","3"] (production only - zone-redundant)
-- DNS label: nav-{env}-gateway (optional - provides {label}.{region}.cloudapp.azure.com FQDN)
+**DNS Configuration**:
+- **Custom Domain** (Optional - controlled by `var.domain_name`):
+  - **DNS Zone**: Existing Azure DNS zone managed in `dns.tf` (conditional on `var.domain_name != null`)
+  - **A Record Update**: Modify existing `azurerm_dns_a_record.container_app` to point to Application Gateway public IP instead of Container Apps Environment static IP
+    - **Before**: `records = [azurerm_container_app_environment.main.static_ip_address]`
+    - **After**: `records = [azurerm_public_ip.app_gateway[0].ip_address]` (when Application Gateway enabled)
+  - **TXT Record**: Domain verification record unchanged (not needed for Application Gateway)
+  - **Custom Domain Binding**: Remove Container Apps custom domain binding resources (not needed when using Application Gateway)
+- **Internal DNS**: Container Apps internal FQDN unchanged, used as Application Gateway backend pool target
 
-**Custom Domain Configuration (if applicable):**
-- DNS A record: {domain} → Application Gateway public IP
-- SSL certificate: Azure Key Vault reference or Azure-managed certificate
-- SNI (Server Name Indication) enabled for multi-domain support (future enhancement)
-
-**Traffic Flow:**
-1. Internet → Application Gateway public IP (10.0.3.x, public IP)
-2. Application Gateway → Container Apps internal endpoint (10.0.1.x, private)
-3. Container Apps → PostgreSQL (10.0.2.x, private via existing VNet integration)
-4. Container Apps → Internet (outbound via NAT Gateway if zone redundancy enabled)
-
-**DNS Resolution:**
-- External clients: Resolve custom domain to Application Gateway public IP
-- Internal (Application Gateway → Container Apps): Azure-provided DNS resolves Container Apps internal FQDN
-- No custom Private DNS zones required (Azure Container Apps handles internal DNS)
+**NAT Gateway** (Existing - Unchanged):
+- Production environment retains NAT Gateway for outbound connectivity (zone 1)
+- Dev environment has no NAT Gateway (cost optimization)
 
 ### Security
 
-**Network Security Group (MODIFIED - Container Apps subnet):**
+**Network Isolation**:
+- **Container Apps Ingress**: Changed to `external_enabled = false` (internal-only access)
+- **NSG Rules**: Container Apps subnet restricted to accept traffic ONLY from Application Gateway subnet (10.240.3.0/24)
+- **No Direct Internet Access**: Container Apps endpoints not accessible from public internet (validated via external network scan)
 
-Existing NSG: `nav-{env}-ca-nsg`
+**SSL/TLS Configuration**:
+- **Certificate Storage**: Azure Key Vault (existing resource) OR Application Gateway-managed certificates
+- **Application Gateway**:
+  - Minimum TLS Version: TLS 1.2 (enforced on frontend listener)
+  - Backend HTTPS: Application Gateway → Container Apps communication uses HTTPS (internal Container Apps endpoint)
+  - **Certificate Management Options**:
+    - **Option 1**: Use existing Key Vault integration (Application Gateway managed identity accesses certificates)
+    - **Option 2**: Use Application Gateway-managed certificates (similar to Container Apps managed certificates)
+  - Custom Domain: If `var.domain_name` is specified, SSL certificate for custom domain bound to frontend listener
+- **Container Apps Custom Domain Binding**: Remove when Application Gateway is enabled
+  - Remove `azurerm_container_app_custom_domain` resource (not needed - domain terminates at Application Gateway)
+  - Remove `azapi_resource.managed_certificate` (Application Gateway handles certificates)
+  - Remove certificate binding/unbinding actions (Application Gateway manages TLS termination)
 
-**Inbound Rules (MODIFIED):**
-```hcl
-# REMOVE existing rule: allow-https-from-internet (0.0.0.0/0:443)
+**Identity and Access Management**:
+- **Application Gateway Managed Identity**: System-assigned managed identity created for Application Gateway
+- **Key Vault Access Policy**: Grant Application Gateway managed identity "Get" permission for secrets/certificates
+- **Container Apps Managed Identity**: Existing identity unchanged (used for ACR image pull, Azure OpenAI access)
 
-# NEW RULE: Allow HTTPS from Application Gateway subnet only
-priority: 100
-name: "allow-https-from-agw"
-source_address_prefix: "10.0.3.0/24" # Application Gateway subnet
-source_port_range: "*"
-destination_address_prefix: "10.0.1.0/24" # Container Apps subnet
-destination_port_range: "443"
-protocol: "Tcp"
-access: "Allow"
-direction: "Inbound"
+**Web Application Firewall** (Optional):
+- **All Environments**: Optional configuration based on security requirements (controlled by `var.appgw_enable_waf`)
+  - Same WAF policy configuration for dev and production (consistency for testing)
+  - OWASP CRS 3.2 ruleset (detection or prevention mode)
+  - Custom exclusion rules for false positive mitigation
+  - Logging to Log Analytics workspace for security monitoring
+- **Default**: Disabled to reduce costs and complexity
 
-# NEW RULE: Allow health probes from Application Gateway
-priority: 110
-name: "allow-health-probes-from-agw"
-source_address_prefix: "10.0.3.0/24"
-source_port_range: "*"
-destination_address_prefix: "10.0.1.0/24"
-destination_port_range: "443"
-protocol: "Tcp"
-access: "Allow"
-direction: "Inbound"
-
-# EXISTING RULE: Deny all other inbound (implicit - Azure default)
-```
-
-**Outbound Rules (unchanged):**
-- Container Apps → Internet (via NAT Gateway if enabled)
-- Container Apps → PostgreSQL subnet (existing rule)
-- Container Apps → Azure services (Microsoft.Storage, etc.)
-
-**Application Gateway Subnet Security:**
-- **CRITICAL**: NO Network Security Group allowed on Application Gateway subnet
-- Azure platform manages Application Gateway subnet security automatically
-- Inbound traffic to Application Gateway public IP implicitly allowed (port 443, 80)
-
-**Web Application Firewall (WAF):**
-
-**Dev Environment:**
-- WAF Policy: Basic OWASP Core Rule Set 3.2 (detection mode only)
-- No request blocking initially (observe traffic patterns for 7-14 days)
-- Alert-only logging to Log Analytics Workspace
-
-**Production Environment:**
-- WAF Policy: OWASP Core Rule Set 3.2 (prevention mode after initial detection period)
-- Rule groups: SQL injection, XSS, protocol attacks, bad bots
-- Custom exclusions: Phoenix LiveView WebSocket upgrade headers (if flagged as anomalies)
-- Rate limiting: 100 requests/minute per client IP (configurable based on usage patterns)
-
-**SSL/TLS Configuration:**
-
-**Application Gateway Frontend:**
-- TLS version: 1.2 minimum (enforced via SSL policy)
-- Cipher suites: Azure predefined policy "AppGwSslPolicy20220101" (TLS 1.2+ secure ciphers only)
-- Certificate: Azure Key Vault integration OR Azure-managed certificate (Let's Encrypt via App Service Managed Certificate)
-- SNI enabled: Yes (for future multi-domain support)
-
-**Application Gateway to Container Apps Backend:**
-- Protocol: HTTPS (encrypted backend traffic)
-- Backend certificate validation: Trusted Azure certificates (Container Apps uses Azure-provided TLS)
-- No custom certificates required for backend pool
-
-**Secrets Management:**
-- SSL certificates stored in Azure Key Vault (if custom domain)
-- Application Gateway managed identity granted Key Vault Secrets Officer role
-- No certificate private keys in Terraform state or version control
-
-**Identity and Access Management (IAM):**
-
-**Application Gateway Managed Identity:**
-- System-assigned managed identity (created automatically with gateway)
-- Key Vault access: GET secret, GET certificate (least privilege for SSL cert retrieval)
-
-**Network Isolation:**
-- Container Apps: Internal ingress only (external_enabled = false) - no public endpoint
-- PostgreSQL: Private endpoint only (existing configuration unchanged)
-- Storage Account: Private endpoint only (existing configuration unchanged)
-
-**Compliance Controls:**
-- TLS 1.2+ enforced (Government of Canada requirement)
-- Defense-in-depth: Application Gateway WAF + Container Apps internal ingress + NSG restrictions
-- Audit logging: All Application Gateway access/WAF logs sent to Log Analytics Workspace
-- No sensitive data logged: WAF logs URL/headers only, no request/response bodies
+**Secrets Management**:
+- **No New Secrets**: Existing secrets (database credentials, OAuth keys, Phoenix secret key) remain in Container Apps configuration
+- **Certificate Storage**: SSL/TLS certificates stored in Azure Key Vault with RBAC access control
+- **No Hardcoded Values**: All sensitive configuration passed via Terraform variables (marked sensitive = true)
 
 ### Environment Configuration
 
-**Environment Strategy**: Terragrunt-based configuration with environment-specific variable files
+**Environment Strategy**: Terragrunt-based configuration with environment-specific input files
 
-**Environments**: dev, production (no staging in current setup)
-
-**Variable Files (Terragrunt):**
-- `terraform/env/dev/terragrunt.hcl` - Dev environment parameters
-- `terraform/env/production/terragrunt.hcl` - Production environment parameters
-
-**Application Gateway Environment-Specific Configuration:**
-
-| Parameter | Dev | Production |
-|-----------|-----|------------|
-| **SKU Tier** | Standard_v2 | Standard_v2 |
-| **Capacity** | 2 (fixed) | 2-10 (auto-scaling) |
-| **Zone Redundancy** | No (single zone) | Yes (zones 1,2,3) |
-| **Public IP SKU** | Standard | Standard |
-| **Public IP Zones** | None | ["1","2","3"] |
-| **WAF Policy** | Detection mode | Prevention mode (after validation) |
-| **WAF Rules** | OWASP CRS 3.2 (basic) | OWASP CRS 3.2 (full) |
-| **Auto-scale Enabled** | No | Yes |
-| **SSL Policy** | AppGwSslPolicy20220101 | AppGwSslPolicy20220101 |
-| **Health Probe Interval** | 30s | 30s |
-| **Connection Draining** | 30s | 60s |
-| **Request Timeout** | 30s | 30s |
-
-**Container Apps Environment-Specific Configuration (MODIFIED):**
-
-| Parameter | Dev | Production | Change |
-|-----------|-----|------------|--------|
-| **Ingress External Enabled** | `false` | `false` | ✅ CHANGED (was `true`) |
-| **Ingress Visibility** | Internal | Internal | ✅ NEW |
-| **IP Restrictions** | Removed | Removed | ✅ CHANGED (was 0.0.0.0/0) |
-| **Min Replicas** | 1 | 2 | No change |
-| **Max Replicas** | 3 | 10 | No change |
-| **Session Affinity** | sticky | sticky | No change (required for WebSocket) |
-
-**Network Security Group Rules (MODIFIED):**
-
-**Dev Environment:**
+**Dev Environment** (`terraform/env/dev/terragrunt.hcl`):
 ```hcl
-# Container Apps NSG - Inbound
-allow_https_from_agw = {
-  priority                   = 100
-  source_address_prefix      = "10.0.3.0/24"  # dev Application Gateway subnet
-  destination_address_prefix = "10.0.1.0/24"  # dev Container Apps subnet
-  destination_port_range     = "443"
+inputs = {
+  # Application Gateway Configuration
+  enable_application_gateway = true
+  appgw_sku_name            = "Standard_v2"
+  appgw_sku_tier            = "Standard_v2"
+  appgw_capacity_min        = 1
+  appgw_capacity_max        = 1  # Fixed capacity, no auto-scaling
+  appgw_enable_waf          = false
+  appgw_zone_redundancy     = false
 }
 ```
 
-**Production Environment:**
+**Production Environment** (`terraform/env/production/terragrunt.hcl`):
 ```hcl
-# Container Apps NSG - Inbound
-allow_https_from_agw = {
-  priority                   = 100
-  source_address_prefix      = "10.0.3.0/24"  # prod Application Gateway subnet
-  destination_address_prefix = "10.0.1.0/24"  # prod Container Apps subnet
-  destination_port_range     = "443"
+inputs = {
+  # Application Gateway Configuration
+  enable_application_gateway = true
+  appgw_sku_name            = "Standard_v2"
+  appgw_sku_tier            = "Standard_v2"
+  appgw_capacity_min        = 2
+  appgw_capacity_max        = 10
+  appgw_enable_waf          = false  # Optional, user preference
+  appgw_zone_redundancy     = true   # Zones 1,2,3
+
+  # Container Apps Scaling (Unchanged)
+  min_replicas = 2
+  max_replicas = 10
 }
 ```
 
-**Naming Convention (consistent across environments):**
-- Application Gateway: `nav-{env}-agw`
-- Public IP: `nav-{env}-agw-pip`
-- WAF Policy: `nav-{env}-waf-policy`
-- Application Gateway subnet: `nav-{env}-agw-snet`
+**Variable Differences**:
+- Application Gateway capacity: Dev (1 fixed), Production (2-10 auto-scaling)
+- Zone redundancy: Dev (disabled), Production (enabled across zones 1,2,3)
+- WAF: Optional in both environments (same configuration if enabled for consistency)
 
-**Deployment Order:**
-1. Deploy Application Gateway to dev environment
-2. Validate WebSocket connections, session affinity, health probes
-3. Update Container Apps ingress to internal-only in dev
-4. Test external access via Application Gateway, confirm no direct Container Apps access
-5. Deploy to production following same sequence
-6. Monitor production for 48 hours before enabling WAF prevention mode
-
-**State Isolation:**
-- Separate Terraform state per environment (managed by Terragrunt)
-- State stored in Azure Blob Storage with unique container per environment
-- No shared state between dev and production (complete isolation)
+**Implementation Defaults** (hardcoded in Terraform, not exposed as variables):
+- Container Apps ingress: Always `external_enabled = false` when Application Gateway is enabled
+- NSG rules: Always restrict Container Apps subnet to Application Gateway subnet only (no opt-in variable)
+- WAF configuration: If enabled, uses same OWASP CRS ruleset and policies across all environments
 
 ### Complexity Level
 
-**Level**: Enhanced (Production-grade security hardening)
+**Baseline (Dev Environment)**:
+- Purpose: Development, testing, cost-optimized environment for validating reverse proxy architecture
+- Application Gateway: Single instance, Standard_v2 tier, no auto-scaling, no zone redundancy
+- WAF: Optional (same configuration as production if enabled for consistency)
+- Monitoring: Basic Application Gateway metrics (request count, response time, backend health)
+- Cost: ~$100-150/month additional for Application Gateway (smallest configuration without WAF)
 
-**Rationale**:
-This infrastructure change implements defense-in-depth security for an existing production application serving Government of Canada users. While Navigator is an internal threat modeling tool (not public-facing to citizens), the security requirements and regulatory compliance mandate production-grade architecture patterns.
+**Enhanced (Production Environment)**:
+- Purpose: Production workload with enhanced availability and security posture
+- Application Gateway: Zone-redundant (zones 1,2,3), auto-scaling 2-10 instances, Standard_v2 tier
+- WAF: Optional (same configuration as dev if enabled for consistency)
+- Monitoring: Comprehensive metrics and alerts (backend failures, unhealthy instances, 5xx errors, latency > 200ms)
+- High Availability: Multi-zone deployment, automated failover, backend health probes every 30 seconds
+- Cost: ~$250-400/month for Application Gateway (zone-redundant, auto-scaling configuration without WAF)
 
-**Characteristics**:
-
-**Purpose**: Security hardening for live production workload (Navigator threat modeling application)
-
-**Architecture Complexity**:
-- Production-grade reverse proxy layer (Application Gateway v2)
-- Multi-tier networking with isolation (gateway subnet, application subnet, database subnet)
-- Zone-redundant deployment (production environment)
-- Defense-in-depth: WAF + internal ingress + NSG restrictions
-
-**Security Controls**:
-- Full encryption: TLS 1.2+ (frontend), HTTPS (backend), private endpoints (database/storage)
-- Web Application Firewall with OWASP Core Rule Set
-- Network isolation: Internal-only container apps, subnet-based restrictions
-- Least-privilege IAM: Managed identity for Key Vault access
-- Comprehensive audit logging: Access logs, WAF logs, diagnostic metrics
-- Security scanning: trivy config terraform/ (enforced gate)
-
-**High Availability**:
-- Zone-redundant Application Gateway (production: 3 availability zones)
-- Auto-scaling: 2-10 capacity units based on load
-- Health probes: 30-second intervals with automatic failover
-- Session affinity: Sticky sessions for WebSocket connection stability
-- Zero-downtime deployment: Blue-green Container Apps revisions during gateway setup
-
-**Monitoring**:
-- Centralized logging: Log Analytics Workspace integration
-- Custom metrics: Gateway latency, backend response time, health probe status
-- Alerting: Unhealthy backend targets, failed requests, WAF blocks
-- Dashboards: Real-time traffic visualization, security event monitoring
-
-**Compliance**:
-- Government of Canada ITSG-33 alignment (defense-in-depth, encryption, audit logging)
-- TLS 1.2+ enforcement (regulatory requirement)
-- Event logging per GC Event Logging Guidance
-- Incident management aligned with GC CSEMP
-
-**Cost**:
-- Baseline (dev): ~$150/month additional (Standard_v2, 2 capacity units, detection-only WAF)
-- Enhanced (production): ~$300-500/month (zone-redundant, auto-scaling, prevention WAF)
-- Justification: Required for compliance with GC security controls; no simpler alternative meets defense-in-depth requirements
-
-**Team Maturity**:
-- Infrastructure as Code: Terragrunt-based configuration, environment isolation
-- CI/CD: Automated validation (terraform validate, trivy scan), manual approval for production
-- Operational readiness: Monitoring, alerting, incident response procedures required
-
-**Baseline vs Enhanced Application**:
-- **Dev environment**: Simplified configuration (single zone, detection-only WAF, minimal scaling) for cost optimization while maintaining security posture
-- **Production environment**: Full enhanced capabilities (zone redundancy, prevention WAF, auto-scaling) to meet availability and security SLOs
-
-This is NOT a POC or demo - this is a production security hardening for a live Government of Canada application. Enhanced complexity level is appropriate and required.
+**Rationale**: Dev environment prioritizes cost efficiency and simplicity for development/testing workflows. Production environment provides zone-redundant deployment for reliability requirements while maintaining cost efficiency through right-sized auto-scaling policies.
 
 ### State Management
 
-**Strategy**: Remote state with Azure Blob Storage backend (managed by Terragrunt)
+**Backend**: Azure Blob Storage with Terragrunt orchestration (existing configuration)
 
-**Current Implementation** (from versions.tf):
-```hcl
-terraform {
-  backend "azurerm" {}  # Configuration auto-generated by Terragrunt
-}
-```
+**Configuration**:
+- **Storage Account**: Environment-specific (navtfstatedev, navtfstateprod)
+- **Container**: tfstate
+- **State File**: navigator.terraform.tfstate
+- **Authentication**: Azure AD authentication (use_azuread_auth = true)
+- **Locking**: Azure Blob Storage native locking mechanism
+- **Encryption**: AES-256 server-side encryption (default for Azure Storage)
 
-**Backend Configuration (Terragrunt-managed)**:
-
-**Dev Environment State:**
-- Storage Account: (Terragrunt auto-configured)
-- Container: `tfstate`
-- Blob: `dev/terraform.tfstate`
-- Resource Group: Shared Terraform state resource group (separate from application resources)
-- Encryption: AES-256 server-side encryption (Azure Storage default)
-- Versioning: Enabled (soft delete with 30-day retention)
-- Access Control: Restricted to CI/CD service principal + authorized operators
-
-**Production Environment State:**
-- Storage Account: (Terragrunt auto-configured)
-- Container: `tfstate`
-- Blob: `production/terraform.tfstate`
-- Resource Group: Shared Terraform state resource group (separate from application resources)
-- Encryption: AES-256 server-side encryption (Azure Storage default)
-- Versioning: Enabled (soft delete with 90-day retention for production)
-- Access Control: Restricted to CI/CD service principal + authorized operators
-
-**State Locking:**
-- Mechanism: Azure Blob Storage native locking (lease-based locking)
-- Lock acquisition: Automatic during `terraform plan` and `terraform apply`
-- Prevents concurrent modifications: Multiple operators cannot modify same environment simultaneously
-- Lock timeout: 15 minutes (Terraform default)
-
-**State Isolation:**
+**State Isolation**:
 - Separate state files per environment (dev, production)
-- No shared state across environments
-- Each environment can be modified independently
-- Enables parallel infrastructure changes across environments (e.g., test in dev while production stable)
+- State managed via Terragrunt remote_state configuration in terraform/env/{environment}/terragrunt.hcl
+- No shared state between environments (complete isolation)
 
-**Backup Strategy:**
-- Azure Blob Storage versioning: Automatic retention of previous state versions
-- Soft delete: 30-day retention (dev), 90-day retention (production)
-- Manual backups: Not required (versioning provides rollback capability)
-- Disaster recovery: Cross-region replication (if Terragrunt configures GRS/RA-GRS storage)
+**Backup Strategy**:
+- Azure Blob Storage versioning enabled on state container
+- Retention: 30-day version history for rollback capability
+- Access Control: Restricted to CI/CD service principals and authorized operators via Azure RBAC
 
-**Access Control:**
-- IAM: Storage Blob Data Contributor role for CI/CD service principal
-- Network: Storage Account firewall allows CI/CD runner IPs + Azure services
-- Authentication: Azure AD authentication (no storage account keys in CI/CD)
-- Audit: Storage Account logging enabled (read/write/delete operations logged)
-
-**Security:**
-- State encryption: AES-256 at rest (Azure Storage default)
-- TLS in transit: Terraform uses HTTPS for state operations
-- Sensitive values: Database passwords, API keys stored in state (encrypted at rest)
-- No credentials in version control: Backend configuration injected by Terragrunt at runtime
-
-**State Management Best Practices:**
-1. Never commit `terraform.tfstate` to version control (already in .gitignore)
-2. Use `terraform state` commands only when necessary (prefer declarative configuration changes)
-3. Review `terraform plan` output before applying (state diff shows changes)
-4. For Application Gateway changes: Review plan carefully (replacement operations can cause downtime)
-5. Use lifecycle `prevent_destroy` for production Application Gateway resource
-
-**Terragrunt Integration:**
-- Terragrunt auto-configures backend based on environment (`terraform/env/{env}/terragrunt.hcl`)
-- DRY principle: Backend configuration not duplicated in Terraform code
-- Workspace selection: Terragrunt manages environment selection automatically
-- State path: Terragrunt injects unique blob path per environment
+**Workspace Usage**: Single workspace per environment (no Terraform workspaces, environment separation via directory structure and Terragrunt)
 
 ## Project Structure
 
 ### Documentation (this infrastructure)
 
 ```text
-specs/[###-infrastructure]/
+specs/002-internal-ca/
 ├── spec.md              # Infrastructure specification (technology-agnostic) - /iac.specify
 ├── plan.md              # This file - architecture plan - /iac.plan
 ├── tasks.md             # Implementation tasks - /iac.tasks
@@ -564,147 +298,76 @@ specs/[###-infrastructure]/
 
 ### Source Code (repository root)
 
-**Structure**: Terraform Infrastructure (Option 2 - organized by resource type)
-
-**Current Repository Structure**:
-```
-navigator-az-terraform/
-├── terraform/
-│   ├── azure/                      # Terraform root module (all .tf files)
-│   │   ├── versions.tf             # Terraform and provider version constraints
-│   │   ├── provider.tf             # Azure provider configuration (azurerm, azapi)
-│   │   ├── locals.tf               # Naming convention centralization
-│   │   ├── variables.tf            # Input variable declarations
-│   │   ├── outputs.tf              # Output value declarations
-│   │   │
-│   │   │   # Existing infrastructure resources
-│   │   ├── vnet.tf                 # Virtual Network, Subnets (includes agw-snet)
-│   │   ├── security.tf             # Network Security Groups (MODIFIED)
-│   │   ├── container-apps.tf      # Container Apps Environment, App (MODIFIED)
-│   │   ├── postgresql.tf          # PostgreSQL Flexible Server
-│   │   ├── storage.tf              # Storage Account
-│   │   ├── acr.tf                  # Azure Container Registry
-│   │   ├── dns.tf                  # Public DNS (if custom domain)
-│   │   ├── dns-private.tf          # Private DNS zones
-│   │   ├── secrets.tf              # Random passwords, Key Vault integration
-│   │   ├── identity.tf             # Managed identities
-│   │   ├── auth-openai.tf          # Azure OpenAI (optional)
-│   │   │
-│   │   │   # NEW infrastructure resources (to be added)
-│   │   ├── application-gateway.tf  # ✅ NEW: Application Gateway, Public IP, WAF Policy
-│   │   │
-│   ├── env/                        # Terragrunt environment configurations
-│   │   ├── dev/
-│   │   │   └── terragrunt.hcl      # Dev environment variables (MODIFIED)
-│   │   └── production/
-│   │       └── terragrunt.hcl      # Production environment variables (MODIFIED)
+```text
+terraform/
+├── azure/                      # Terraform infrastructure code (existing)
+│   ├── versions.tf            # Provider version constraints (existing, unchanged)
+│   ├── provider.tf            # Azure provider configuration (existing, unchanged)
+│   ├── locals.tf              # Naming conventions (modified: add Application Gateway names)
+│   ├── variables.tf           # Variable declarations (modified: add Application Gateway variables)
+│   ├── outputs.tf             # Output declarations (modified: add Application Gateway public IP output)
 │   │
-├── specs/                          # Infrastructure specifications
-│   ├── 002-internal-ca/            # This specification
-│   │   ├── spec.md                 # Infrastructure requirements
-│   │   ├── plan.md                 # This architecture plan
-│   │   └── tasks.md                # Implementation tasks (to be created via /iac.tasks)
+│   │   # Networking Resources (Modified)
+│   ├── vnet.tf                # VNet and subnets (existing, activate Application Gateway subnet)
+│   ├── security.tf            # NSG rules (MODIFIED: conditional rules restrict Container Apps to Application Gateway subnet)
 │   │
-├── navigator/                      # Git submodule (Navigator application source)
-│   └── (Elixir/Phoenix application - DO NOT MODIFY)
-│  
-├── .github/
-│   └── instructions/               # Coding standards
-│       ├── terraform.instructions.md
-│       └── (other guidelines)
+│   │   # New Application Gateway Resources
+│   ├── application-gateway.tf # Application Gateway resource definition, public IP, backend pool, health probes
+│   ├── appgw-waf.tf           # WAF policy configuration (conditional on var.appgw_enable_waf)
+│   │
+│   │   # Compute Resources (Modified)
+│   ├── container-apps.tf      # Container Apps (MODIFIED: conditional external_enabled based on Application Gateway)
+│   ├── identity.tf            # Managed identities (modified: add Application Gateway identity)
+│   │
+│   │   # Data Storage (Unchanged)
+│   ├── postgresql.tf          # PostgreSQL Flexible Server (existing, unchanged)
+│   ├── storage.tf             # Storage Account (existing, unchanged)
+│   ├── auth-openai.tf         # Azure OpenAI (existing, unchanged)
+│   ├── secrets.tf             # Key Vault secrets (existing, unchanged)
+│   │
+│   │   # DNS Configuration (Modified)
+│   ├── dns.tf                 # DNS zone and A record (MODIFIED: update A record to point to Application Gateway IP)
+│   │                          # Remove Container Apps custom domain binding resources (not needed with Application Gateway)
+│   │
+│   │   # Monitoring (Existing)
+│   └── (other files...)       # Other existing infrastructure files
 │
-├── AGENTS.md                       # Agent instructions (project overview)
-├── README.md                       # Repository documentation
-└── .gitignore                      # Excludes .tfstate, .terraform/, secrets
+└── env/                        # Environment-specific configurations (Terragrunt)
+    ├── dev/
+    │   └── terragrunt.hcl     # Dev environment inputs (MODIFIED: add Application Gateway config)
+    └── production/
+        └── terragrunt.hcl     # Production environment inputs (MODIFIED: add Application Gateway config)
 ```
 
-**Files to be Modified (Implementation Phase)**:
+**Structure Decision**: Existing Terraform Infrastructure (Option 2) with organized file structure by resource type. New resources added to dedicated `application-gateway.tf` file to maintain clear separation of concerns. Existing files modified minimally (container-apps.tf, security.tf, locals.tf, variables.tf) to integrate reverse proxy architecture. Terragrunt orchestration pattern preserved for environment-specific configuration.
 
-1. **terraform/azure/application-gateway.tf** (NEW FILE)
-   - Application Gateway resource (azurerm_application_gateway)
-   - Public IP resource (azurerm_public_ip)
-   - WAF Policy resource (azurerm_web_application_firewall_policy)
-   - Backend pool configuration (Container Apps internal FQDN)
-   - Health probe configuration (HTTPS, path /, 30s interval)
-   - Routing rules (all traffic → backend pool)
-   - SSL/TLS configuration (Azure-managed certificate or Key Vault reference)
-   - Session affinity (cookie-based)
+**File Organization Rationale**:
+- `application-gateway.tf`: All Application Gateway resources (gateway, public IP, backend pool, listeners, rules, health probes)
+- `appgw-waf.tf`: WAF policy configuration (conditional, optional feature)
+- `security.tf`: NSG rule modifications (conditional - automatically restrict Container Apps when Application Gateway enabled)
+- `container-apps.tf`: Conditional ingress logic (`external_enabled = var.enable_application_gateway ? false : true`)
+- `dns.tf`: Update A record to point to Application Gateway public IP instead of Container Apps static IP (conditional on `var.domain_name`)
+  - Remove Container Apps custom domain binding resources (`azurerm_container_app_custom_domain`, `azapi_resource.managed_certificate`, certificate binding actions)
+  - Keep DNS zone and A record resources, update A record target
+- `outputs.tf`: Export Application Gateway public IP
+- Environment-specific configuration managed via Terragrunt input files (no code duplication)
 
-2. **terraform/azure/security.tf** (MODIFY EXISTING)
-   - Update Container Apps NSG inbound rules:
-     - Remove: `allow-https-from-internet` (0.0.0.0/0 → Container Apps)
-     - Add: `allow-https-from-agw` (Application Gateway subnet → Container Apps subnet)
+## Complexity Tracking
 
-3. **terraform/azure/container-apps.tf** (MODIFY EXISTING)
-   - Change `azurerm_container_app.navigator.ingress.external_enabled` from `true` to `false`
-   - Remove or comment out `ip_security_restriction` block (internal ingress doesn't need IP restrictions)
-   - Add `depends_on` for Application Gateway (ensure gateway ready before switching to internal ingress)
+> **No violations requiring justification**
 
-4. **terraform/azure/locals.tf** (MODIFY EXISTING)
-   - Add Application Gateway naming locals:
-     ```hcl
-     agw_name        = "${local.name_prefix}-agw"
-     agw_pip_name    = "${local.name_prefix}-agw-pip"
-     waf_policy_name = "${local.name_prefix}-waf-policy"
-     ```
-
-5. **terraform/azure/variables.tf** (MODIFY EXISTING)
-   - Add Application Gateway configuration variables:
-     ```hcl
-     variable "agw_capacity_min" { ... }
-     variable "agw_capacity_max" { ... }
-     variable "enable_waf" { ... }
-     variable "waf_mode" { ... }  # "Detection" or "Prevention"
-     ```
-
-6. **terraform/env/dev/terragrunt.hcl** (MODIFY EXISTING)
-   - Add Application Gateway dev configuration:
-     ```hcl
-     agw_capacity_min = 2
-     agw_capacity_max = 2
-     enable_waf = true
-     waf_mode = "Detection"
-     ```
-
-7. **terraform/env/production/terragrunt.hcl** (MODIFY EXISTING)
-   - Add Application Gateway production configuration:
-     ```hcl
-     agw_capacity_min = 2
-     agw_capacity_max = 10
-     enable_waf = true
-     waf_mode = "Detection"  # Change to "Prevention" after validation
-     ```
-
-8. **terraform/azure/outputs.tf** (MODIFY EXISTING)
-   - Add Application Gateway outputs:
-     ```hcl
-     output "application_gateway_public_ip" { ... }
-     output "application_gateway_fqdn" { ... }
-     ```
-
-**Structure Decision**:
-
-**Selected**: Option 2 - Terraform Infrastructure (organized by resource type)
-
-**Rationale**:
-- Existing infrastructure already uses this pattern (vnet.tf, container-apps.tf, postgresql.tf, etc.)
-- Clear organization: Each file groups related resources (networking, compute, security)
-- Maintainability: Easy to locate Application Gateway configuration (single file)
-- No unnecessary complexity: Direct resources preferred over modules (see "Prefer Resource Simplicity" principle)
-- Team familiarity: Consistent with existing codebase patterns
-- File count: Adding 1 new file (application-gateway.tf) + modifications to 7 existing files
-
-**NOT using modules**:
-- Azure Verified Module (avm-res-network-applicationgateway) evaluated but rejected
-- Direct `azurerm_application_gateway` resource provides better transparency for security reviews
-- Estimated LOC: ~200 lines for Application Gateway resource vs 500+ lines of module abstraction
-- Debugging: Direct resources easier to troubleshoot than module wrapper
-- Decision aligns with "Prefer Resource Simplicity" principle
+All infrastructure decisions align with project principles at appropriate complexity levels:
+- Managed services used (Application Gateway PaaS)
+- Simplicity prioritized (direct resources, minimal configuration)
+- Reliability scaled appropriately (dev: single zone, production: multi-zone)
+- Cost optimized per environment tier (dev: minimal capacity, production: right-sized auto-scaling)
+- Resource simplicity maintained (direct `azurerm_application_gateway` resource, not wrapped in module)
+- Secrets managed securely (Key Vault integration, no hardcoded credentials)
 
 ---
 
-**Plan Complete** - Ready for task breakdown via `/iac.tasks`
-
-**Optional Next Steps**:
-- Run `/iac.enrichplan` for deep research (Well-Architected Framework analysis, detailed module configurations)
-- Run `/iac.tasks` to break this plan into implementation tasks
+**Next Steps**:
+1. Run `/iac.tasks` to generate implementation tasks breaking down this plan into actionable steps
+2. OR run `/iac.enrichplan` first for deep research on Azure Well-Architected Framework, detailed module configurations, and provisioning quickstart guide
+3. Validate plan with security team for NSG rule changes and defense-in-depth architecture
+4. Estimate costs for Application Gateway using Azure Pricing Calculator (Standard_v2 tier, Canada Central region)
