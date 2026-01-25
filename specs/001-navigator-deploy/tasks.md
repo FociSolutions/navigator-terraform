@@ -155,7 +155,7 @@ Tasks are organized by infrastructure tier in the phase structure below
 - [x] T059 Run `terraform fmt -recursive` in terraform/azure/ to format all .tf files
 - [x] T060 Run `cd terraform/env/dev && terragrunt validate` to validate all dev configurations
 - [x] T061 Run `cd terraform/env/production && terragrunt validate` to validate production configurations
-- [x] T062 [P] Run `tflint --chdir terraform/azure` to identify linting issues and fix any warnings or errors (17 warnings found - all intentional unused declarations for future features)
+- [x] T062 [P] Run `tflint --chdir terraform/azure` to identify linting issues and fix any warnings or errors (17 warnings found - all removed following YAGNI principle: unused data sources, locals, and variables deleted)
 - [x] T063 [P] Run Trivy security scan on Terraform code: `trivy config terraform/azure/` to identify security issues (0 HIGH/CRITICAL findings)
 - [x] T064 [P] Review Trivy findings and remediate HIGH/CRITICAL issues or add #trivy:ignore comments with business justification (AVD-AZU-0047 for unrestricted HTTPS inbound on public web app, AVD-AZU-0051 for conditional outbound internet access for OpenAI API - see plan.md Security Compliance section) (No HIGH/CRITICAL findings to remediate)
 
