@@ -6,7 +6,7 @@ Navigator is an Elixir/Phoenix web application providing real-time threat modeli
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### Azure Services Deployed
 
@@ -50,11 +50,11 @@ Navigator is an Elixir/Phoenix web application providing real-time threat modeli
 
 ---
 
-## ✅ Prerequisites
+## Prerequisites
 
 ### Required Azure Resources (Must Exist Before Deployment)
 
-These resources must be created manually before running Terraform:
+These resources (or equivalent) must be created manually before running Terraform:
 
 1. **Resource Groups**:
    - `navigator-dev-rg` (Development environment)
@@ -94,7 +94,7 @@ az account set --subscription <SUBSCRIPTION_ID_OR_NAME>
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 navigator-az-terraform/
@@ -132,37 +132,13 @@ navigator-az-terraform/
 
 ---
 
-## 🚀 Deployment Strategy
-
-### Environment Promotion Workflow
-
-1. **Development First**: Always validate changes in the `dev` environment before production
-2. **Configuration-Driven**: Environment differences managed via Terragrunt inputs (no code changes)
-3. **Manual Deployment**: Explicit approval required for each deployment (no automation)
-4. **Sequential Promotion**: `dev` → testing/validation → `production`
-
-### Resource Naming Convention
-
-Pattern: `{project}-{env}-{descriptor}-{type}[-{instance}]`
-
-Examples:
-- `nav-dev-vnet` (Virtual Network)
-- `nav-dev-ca-001` (Container App instance)
-- `nav-dev-psql` (PostgreSQL Flexible Server)
-- `nav-dev-kv-1a2b3c4d` (Key Vault with uniqueness hash)
-- `navdevst1a2b3c4d` (Storage Account - no hyphens, includes hash)
-
----
-
-## 📦 Manual Deployment Steps
+## Manual Deployment Steps
 
 ### Initial Deployment
 
-#### Important Note: Custom Domain Deployment
-
-**If deploying with a custom domain** (`domain_name` variable set):
-
-The **first `terraform apply` will fail** during custom domain binding. This is expected. Follow this workflow:
+> [!IMPORTANT]
+> If deploying with a custom domain** (`domain_name` variable set):
+> The **first `terraform apply` will fail** during custom domain binding. This is expected due to a [limitation](https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510) in upstream terraform provider.
 
 1. **Run initial deployment:**
    ```bash
@@ -190,76 +166,7 @@ The **first `terraform apply` will fail** during custom domain binding. This is 
 
 **Without a custom domain**, deployment succeeds on first apply.
 
-### Incremental Updates
-
-```bash
-cd terraform/env/{dev|production}
-
-# Review changes before applying
-terragrunt plan
-
-# Apply only if changes are expected and reviewed
-terragrunt apply
-```
-
-### Destroying Infrastructure
-
-⚠️ **WARNING**: This will permanently delete all resources and data.
-
-```bash
-cd terraform/env/{dev|production}
-
-# Review resources to be destroyed
-terragrunt plan -destroy
-
-# Destroy infrastructure (requires manual confirmation)
-terragrunt destroy
-```
-
----
-
-## ⚙️ Post-Deployment Configuration
-
-### 1. DNS Name Server Configuration
-
-**⚠️ REQUIRED during initial deployment if using custom domain** (`domain_name` variable set):
-
-#### First Apply (Will Fail - Expected)
-
-```bash
-cd terraform/env/{dev|production}
-terragrunt apply  # Creates DNS zone, fails at custom domain binding
-```
-
-#### Configure Name Servers
-
-1. **Retrieve Azure DNS name servers:**
-   ```bash
-   terragrunt output dns_zone_nameservers
-   ```
-
-2. **Update NS records at your domain registrar** with the 4 Azure DNS name servers from output above.
-
-3. **Wait for DNS propagation** (15 minutes to 48 hours). Verify:
-   ```bash
-   dig NS navigator-dev.demo.focisolutions.com
-   # Should return Azure DNS name servers
-   ```
-
-#### Second Apply (Will Succeed)
-
-Once DNS propagates, re-run deployment:
-
-```bash
-terragrunt apply  # Completes domain verification, certificate creation, HTTPS binding
-```
-
-Verify HTTPS access:
-```bash
-curl -I https://navigator-dev.demo.focisolutions.com  # Should show 200 OK with valid SSL
-```
-
-### 2. Authentication Provider Configuration (Optional)
+### Authentication Provider Configuration (Optional)
 
 **If using Google OAuth or Microsoft Entra ID authentication**:
 
@@ -308,17 +215,20 @@ terragrunt apply
 
 Credentials are automatically injected into Container Apps secrets and exposed as environment variables to the Navigator application.
 
-### 3. Azure Defender for Cloud (Optional)
+### Destroying Infrastructure
 
-Enable Azure Defender for enhanced security monitoring:
+> [!WARNING]
+> This will permanently delete all resources and data.
 
-1. Navigate to **Azure Security Center** > **Pricing & Settings**
-2. Select your subscription
-3. Enable **Enhanced Security** for:
-   - Container Apps
-   - PostgreSQL databases
-   - Storage accounts (if created)
-4. Configure alert notifications and policies as needed
+```bash
+cd terraform/env/{dev|production}
+
+# Review resources to be destroyed
+terragrunt plan -destroy
+
+# Destroy infrastructure (requires manual confirmation)
+terragrunt destroy
+```
 
 ---
 
@@ -389,7 +299,7 @@ inputs = {
 
 ---
 
-## 📤 Outputs
+## Outputs
 
 ### Key Infrastructure Outputs
 
@@ -418,7 +328,7 @@ terragrunt output
 
 ---
 
-## 🔒 Security & Compliance
+## Security & Compliance
 
 ### Security Features
 
@@ -466,7 +376,7 @@ trivy config terraform/azure/
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [Navigator Application Repository](https://github.com/canada-ca/navigator/)
 - [Reference AWS Implementation](https://github.com/cds-snc/valentine-terraform/)
@@ -476,41 +386,6 @@ trivy config terraform/azure/
 
 ---
 
-## 🆘 Troubleshooting
-
-### Common Issues
-
-**Issue**: `terragrunt plan` fails with authentication error
-
-**Solution**: Ensure you're authenticated to Azure:
-```bash
-az login --scope https://management.azure.com//.default
-az account show  # Verify correct subscription
-```
-
----
-
-**Issue**: DNS resolution fails after deployment
-
-**Solution**:
-1. Verify NS records at domain registrar match Azure DNS name servers
-2. Wait for DNS propagation (24-48 hours)
-3. Use `nslookup` or `dig` to verify DNS resolution
-
----
-
-**Issue**: Container App fails health checks
-
-**Solution**:
-1. Check Container Apps logs in Azure Portal or via Azure CLI:
-   ```bash
-   az containerapp logs show --name nav-{env}-ca-001 --resource-group navigator-{env}-rg
-   ```
-2. Verify PostgreSQL connectivity from Container Apps subnet
-3. Check environment variable configuration (PHX_HOST, DATABASE_URL, SECRET_KEY_BASE)
-
----
-
-## 📝 License
+## License
 
 This infrastructure code is maintained as part of the Navigator project. See the [Navigator repository](https://github.com/canada-ca/navigator/) for license information.
