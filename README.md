@@ -4,18 +4,6 @@ This repository contains Terraform infrastructure-as-code (IaC) for deploying th
 
 Navigator is an Elixir/Phoenix web application providing real-time threat modeling capabilities with collaborative features.
 
-## 📋 Table of Contents
-
-- [Architecture Overview](#architecture-overview)
-- [Prerequisites](#prerequisites)
-- [Repository Structure](#repository-structure)
-- [Deployment Strategy](#deployment-strategy)
-- [Manual Deployment Steps](#manual-deployment-steps)
-- [Post-Deployment Configuration](#post-deployment-configuration)
-- [Environment Configuration](#environment-configuration)
-- [Outputs](#outputs)
-- [Security & Compliance](#security--compliance)
-
 ---
 
 ## 🏗️ Architecture Overview
