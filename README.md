@@ -231,7 +231,7 @@ terragrunt destroy
 
 ---
 
-## 🔧 Environment Configuration
+## Environment Configuration
 
 ### Development Environment
 
