@@ -170,37 +170,37 @@ Examples:
 
 ### Initial Deployment
 
-#### 1. Development Environment
+#### Important Note: Custom Domain Deployment
 
-```bash
-# Navigate to dev environment directory
-cd terraform/env/dev
+**If deploying with a custom domain** (`domain_name` variable set):
 
-# Review planned infrastructure changes
-terragrunt plan
+The **first `terraform apply` will fail** during custom domain binding. This is expected. Follow this workflow:
 
-# Apply infrastructure (requires manual approval)
-terragrunt apply
+1. **Run initial deployment:**
+   ```bash
+   terragrunt apply
+   ```
+   This creates the DNS zone but fails at custom domain binding.
 
-# Verify outputs
-terragrunt output
-```
+2. **Configure NS records at your domain registrar:**
+   ```bash
+   # Retrieve Azure DNS name servers
+   terragrunt output dns_zone_nameservers
+   ```
+   Update your domain registrar's NS records with these 4 Azure DNS name servers.
 
-#### 2. Production Environment
+3. **Wait for DNS propagation** (15 minutes to 48 hours). Verify with:
+   ```bash
+   dig NS navigator-dev.demo.focisolutions.com
+   ```
 
-```bash
-# Navigate to production environment directory
-cd terraform/env/production
+4. **Re-run deployment:**
+   ```bash
+   terragrunt apply
+   ```
+   This completes the certificate creation and HTTPS binding.
 
-# Review planned infrastructure changes
-terragrunt plan
-
-# Apply infrastructure with explicit approval
-terragrunt apply
-
-# Verify outputs
-terragrunt output
-```
+**Without a custom domain**, deployment succeeds on first apply.
 
 ### Incremental Updates
 
@@ -234,26 +234,42 @@ terragrunt destroy
 
 ### 1. DNS Name Server Configuration
 
-**Required if using custom domain** (`domain_name` variable set):
+**⚠️ REQUIRED during initial deployment if using custom domain** (`domain_name` variable set):
 
-1. Retrieve Azure DNS name servers from Terraform outputs:
+#### First Apply (Will Fail - Expected)
+
+```bash
+cd terraform/env/{dev|production}
+terragrunt apply  # Creates DNS zone, fails at custom domain binding
+```
+
+#### Configure Name Servers
+
+1. **Retrieve Azure DNS name servers:**
    ```bash
-   cd terraform/env/{dev|production}
    terragrunt output dns_zone_nameservers
    ```
 
-2. Update NS records at your domain registrar:
-   - Navigate to your domain registrar's DNS management console
-   - Find the NS record configuration for your domain
-   - Replace existing name servers with Azure DNS name servers from step 1
-   - Wait for DNS propagation (can take 24-48 hours)
+2. **Update NS records at your domain registrar** with the 4 Azure DNS name servers from output above.
 
-3. Verify DNS propagation:
+3. **Wait for DNS propagation** (15 minutes to 48 hours). Verify:
    ```bash
-   nslookup navigator-dev.demo.focisolutions.com
-   # Or for production:
-   nslookup navigator.demo.focisolutions.com
+   dig NS navigator-dev.demo.focisolutions.com
+   # Should return Azure DNS name servers
    ```
+
+#### Second Apply (Will Succeed)
+
+Once DNS propagates, re-run deployment:
+
+```bash
+terragrunt apply  # Completes domain verification, certificate creation, HTTPS binding
+```
+
+Verify HTTPS access:
+```bash
+curl -I https://navigator-dev.demo.focisolutions.com  # Should show 200 OK with valid SSL
+```
 
 ### 2. Authentication Provider Configuration (Optional)
 
