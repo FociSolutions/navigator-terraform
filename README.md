@@ -137,8 +137,7 @@ navigator-az-terraform/
 ### Initial Deployment
 
 > [!IMPORTANT]
-> If deploying with a custom domain** (`domain_name` variable set):
-> The **first `terraform apply` will fail** during custom domain binding. This is expected due to a [limitation](https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510) in upstream terraform provider.
+> If deploying with a custom domain (`domain_name` variable set) - the **first `terraform apply` will fail** during custom domain binding. This is expected due to a [limitation](https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510) in upstream terraform provider.
 
 1. **Run initial deployment:**
    ```bash
