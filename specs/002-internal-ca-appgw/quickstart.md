@@ -108,7 +108,7 @@ git checkout 002-internal-ca-appgw
 # - Container Apps Environment (VNet-integrated)
 # - Navigator Container App (public ingress currently)
 # - PostgreSQL Flexible Server
-# - Subnets: Container Apps (10.240.1.0/24), PostgreSQL (10.240.2.0/24), App Gateway (10.240.3.0/24)
+# - Subnets: Container Apps (10.240.0.0/23), PostgreSQL (10.240.2.0/24), App Gateway (10.240.3.0/24)
 
 cd terraform/env/dev
 terragrunt state list
@@ -176,10 +176,11 @@ terragrunt plan
 # Review changes carefully:
 # - NEW: Application Gateway resources (gateway, public IP, WAF policy if enabled)
 # - NEW: ACME certificate resources (if custom domain provided)
-# - NEW: Private DNS zone for Container Apps
-# - MODIFIED: Container Apps subnet size (10.240.1.0/24 → 10.240.1.0/23)
-# - MODIFIED: Container Apps ingress (external_enabled: true → false)
-# - MODIFIED: Container Apps NSG (new rule allowing App Gateway traffic)
+# - NEW: Private DNS zone for Container Apps and custom domain
+# - MODIFIED: Container Apps Environment (internal_load_balancer_enabled: true, public_network_access: Disabled)
+# - MODIFIED: Container Apps subnet (10.240.1.0/24 → 10.240.0.0/23, Microsoft requirement)
+# - MODIFIED: Container Apps ingress (external_enabled: true for VNET access)
+# - MODIFIED: Container Apps NSG (new rule allowing App Gateway HTTP traffic on port 80)
 # - MODIFIED: DNS A record (points to App Gateway IP instead of Container Apps IP)
 ```
 
@@ -207,8 +208,17 @@ az network public-ip show \
   --output tsv
 ```
 
-**4. Verify Container Apps Internal Ingress**:
+**6. Verify Container Apps Internal Ingress**:
 ```bash
+# Get Container Apps environment details
+az containerapp env show \
+  --name nav-dev-cae \
+  --resource-group <resource-group-name> \
+  --query 'properties.vnetConfiguration.internal' \
+  --output tsv
+
+# Expected output: true (internal load balancer enabled)
+
 # Get Container Apps details
 az containerapp show \
   --name nav-dev-ca-001 \
@@ -217,8 +227,8 @@ az containerapp show \
 
 # Expected output:
 # {
-#   "external": false,        # ✓ Internal ingress
-#   "fqdn": "nav-dev-ca-001.internal.<env-domain>",
+#   "external": true,        # ✓ Allows VNET connections (required for App Gateway)
+#   "fqdn": "nav-dev-ca-001.<env-domain>",
 #   "targetPort": 4000,
 #   ...
 # }
@@ -251,7 +261,7 @@ az network nsg rule list \
   --output table
 
 # Expected new rule:
-# AllowAppGatewayHttps | Priority: 100 | Allow | TCP | 10.240.3.0/24 → 10.240.1.0/23:443
+# AllowAppGatewayHttp | Priority: 100 | Allow | TCP | 10.240.3.0/24 → 10.240.0.0/23:80
 ```
 
 ---
@@ -261,8 +271,9 @@ az network nsg rule list \
 **Skip this phase if using default Azure domain** (no custom domain provided)
 
 **Prerequisites**:
-- Custom domain registered (e.g., `navigator-dev.example.gc.ca`)
+- Custom domain registered (e.g., `demo.focisolutions.com`)
 - Access to domain registrar for NS record updates
+- Environment: dev or production (domain pattern: `navigator-{env}.demo.focisolutions.com`)
 
 **1. Get Azure DNS Name Servers**:
 ```bash
@@ -723,8 +734,9 @@ terragrunt apply
 curl -I https://<container-apps-fqdn>
 
 # 4. Fix Application Gateway configuration
-# 5. Revert Container Apps to internal ingress
-# ingress { external_enabled = false }
+# 5. Verify Container Apps configuration
+# Container App Environment: internal_load_balancer_enabled = true
+# Container App ingress: external_enabled = true (for VNET access)
 
 # 6. Re-apply
 terragrunt apply

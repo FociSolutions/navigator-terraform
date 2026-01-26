@@ -594,6 +594,8 @@ terraform {
 - Supports wildcard certificates (future-proofing)
 - More reliable for automated renewal (no dependency on application availability)
 
+**Important Note**: The Azure provider name has changed from `azure` to `azuredns` in recent versions of the ACME provider. Use `azuredns` for DNS-01 challenges with Azure DNS.
+
 **Configuration**:
 ```hcl
 provider "acme" {
@@ -608,9 +610,9 @@ resource "acme_certificate" "navigator" {
   account_key_pem = acme_registration.account.account_key_pem
   common_name     = var.domain_name
 
-  # DNS-01 challenge using Azure DNS
+  # DNS-01 challenge using Azure DNS (provider name: azuredns)
   dns_challenge {
-    provider = "azure"
+    provider = "azuredns"
 
     config = {
       AZURE_RESOURCE_GROUP = var.resource_group_name
@@ -697,7 +699,7 @@ variable "acme_email_address" {
 **Subnet Strategy** (from plan.md):
 ```
 VNet: 10.240.0.0/16
-├── Container Apps Subnet: 10.240.1.0/23 (expanded from /24 for VNet integration)
+├── Container Apps Subnet: 10.240.0.0/23 (Microsoft requirement for VNET delegation with internal load balancer)
 ├── PostgreSQL Subnet: 10.240.2.0/24 (private delegated subnet)
 └── Application Gateway Subnet: 10.240.3.0/24 (dedicated, no NSG allowed)
 ```
@@ -707,7 +709,7 @@ VNet: 10.240.0.0/16
 *Container Apps NSG* (MODIFIED):
 ```
 Inbound Rules (Priority Order):
-1. Allow HTTPS from Application Gateway subnet (10.240.3.0/24) → Port 443 [NEW]
+1. Allow HTTP from Application Gateway subnet (10.240.3.0/24) → Port 80 [NEW - changed from HTTPS/443]
 2. Allow PostgreSQL traffic from Container Apps subnet → Port 5432 [EXISTING]
 3. Deny all other inbound traffic [EXISTING]
 

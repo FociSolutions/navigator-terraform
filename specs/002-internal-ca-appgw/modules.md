@@ -17,9 +17,9 @@
 
 **Application to this feature**:
 1. **Application Gateway configuration** is straightforward: SKU, listeners, backend pools, routing rules, health probes
-2. **Container Apps ingress change** is a single attribute modification: `external_enabled = false`
-3. **Private DNS zone** is simple: zone creation, virtual network link, A records
-4. **NSG rule addition** is explicit: single inbound rule allowing Application Gateway → Container Apps
+2. **Container Apps Environment** modification: `internal_load_balancer_enabled = true`, ingress `external_enabled = true` (for VNET access)
+3. **Private DNS zones** are simple: zone creation for Container Apps and custom domain, virtual network links, A records
+4. **NSG rule addition** is explicit: single inbound rule allowing Application Gateway → Container Apps (HTTP port 80)
 
 None of these warrant module abstraction. Direct resources make configuration explicit and enable straightforward troubleshooting.
 
@@ -136,9 +136,9 @@ resource "azurerm_network_security_rule" "ca_allow_appgw" {
   access                      = "Allow"
   protocol                    = "Tcp"
   source_port_range           = "*"
-  destination_port_range      = "443"
+  destination_port_range      = "80"
   source_address_prefix       = "10.240.3.0/24"  # Application Gateway subnet
-  destination_address_prefix  = "10.240.1.0/23"  # Container Apps subnet
+  destination_address_prefix  = "10.240.0.0/23"  # Container Apps subnet
   resource_group_name         = azurerm_resource_group.this.name
   network_security_group_name = azurerm_network_security_group.ca.name
 }
@@ -152,7 +152,7 @@ resource "azurerm_network_security_rule" "ca_allow_appgw" {
 resource "azurerm_subnet" "ca" {
   name                 = "${local.name_prefix}-ca-snet"
   # ...
-  address_prefixes     = ["10.240.1.0/23"]  # CHANGED from /24 to /23
+  address_prefixes     = ["10.240.0.0/23"]  # CHANGED from 10.240.1.0/24 to 10.240.0.0/23 (Microsoft requirement)
   # ...
 }
 ```
@@ -162,13 +162,20 @@ resource "azurerm_subnet" "ca" {
 **3. Container App Ingress**:
 ```hcl
 # File: terraform/azure/container-apps.tf
+resource "azurerm_container_app_environment" "this" {
+  # ...
+  internal_load_balancer_enabled = true  # NEW
+  # ...
+}
+
 resource "azurerm_container_app" "navigator" {
   # ...
 
   ingress {
-    external_enabled           = false  # CHANGED from true
+    external_enabled           = true   # Set to true to allow VNET access (required for App Gateway)
     allow_insecure_connections = false
     target_port                = 4000
+    # transport defaults to Auto (removed explicit configuration)
   }
 
   # ...
@@ -223,13 +230,15 @@ resource "azurerm_dns_a_record" "main" {
 - Add ACME provider configuration block
 
 **3. terraform/azure/vnet.tf**:
-- Modify Container Apps subnet size (10.240.1.0/23)
+- Modify Container Apps subnet (10.240.1.0/24 → 10.240.0.0/23, Microsoft requirement for delegation)
 
 **4. terraform/azure/security.tf**:
 - Add NSG rule allowing Application Gateway → Container Apps traffic
 
 **5. terraform/azure/container-apps.tf**:
-- Modify ingress `external_enabled = false`
+- Add `internal_load_balancer_enabled = true` to Container App Environment
+- Modify ingress `external_enabled = true` (for VNET access, counterintuitive but required)
+- Remove explicit transport configuration (defaults to Auto)
 
 **6. terraform/azure/dns.tf**:
 - Modify DNS A record to point to Application Gateway public IP
@@ -353,10 +362,10 @@ inputs = {
   enable_waf                   = false
   enable_zone_redundancy       = false
   enable_http_redirect         = true
-  container_apps_subnet_prefix = "10.240.1.0/23"
+  container_apps_subnet_prefix = "10.240.0.0/23"
   acme_email_address          = "devops-dev@example.gc.ca"
   acme_server_url             = "https://acme-staging-v02.api.letsencrypt.org/directory"
-  domain_name                 = null  # Use default Container Apps domain
+  domain_name                 = "demo.focisolutions.com"  # Subdomain pattern: navigator-{env}.demo.focisolutions.com
 }
 ```
 
@@ -372,10 +381,10 @@ inputs = {
   enable_zone_redundancy       = true
   enable_http_redirect         = true
   waf_mode                    = "Detection"  # Used only if enable_waf = true
-  container_apps_subnet_prefix = "10.240.1.0/23"
+  container_apps_subnet_prefix = "10.240.0.0/23"
   acme_email_address          = "devops@example.gc.ca"
   acme_server_url             = "https://acme-v02.api.letsencrypt.org/directory"
-  domain_name                 = "navigator.example.gc.ca"  # Triggers ACME certificate
+  domain_name                 = "demo.focisolutions.com"  # Subdomain pattern: navigator-{env}.demo.focisolutions.com
 }
 ```
 
@@ -473,7 +482,7 @@ azurerm_resource_group.this
 - Implicit dependency via `AZURE_ZONE_NAME = var.domain_name`
 
 **4. NSG Rule → Subnets**:
-- NSG rule references Application Gateway subnet (10.240.3.0/24) and Container Apps subnet (10.240.1.0/23)
+- NSG rule references Application Gateway subnet (10.240.3.0/24) and Container Apps subnet (10.240.0.0/23)
 - Implicit dependency via address prefixes
 
 ---

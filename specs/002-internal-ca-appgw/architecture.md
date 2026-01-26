@@ -20,25 +20,27 @@ This document provides detailed infrastructure architecture specifications for i
 ┌─────────────────────────────────────────────────────────────────┐
 │  Azure Application Gateway (Standard_v2)                        │
 │  - Public IP (zone-redundant/prod, zone-local/dev)              │
-│  - TLS Termination (Let's Encrypt via ACME)                     │
+│  - TLS Termination (Let's Encrypt via ACME azuredns provider)   │
 │  - WAF Policy (optional, OWASP CRS 3.2)                         │
-│  - Health Probes → Container Apps                               │
+│  - Health Probes → Container Apps (HTTP)                        │
 │  Subnet: 10.240.3.0/24                                          │
 └────────────────────────────┬────────────────────────────────────┘
                              │
-                             │ HTTPS → Private DNS → Internal FQDN
+                             │ HTTP (80) → Private DNS → Internal FQDN
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Azure Container Apps Environment (Internal Ingress)            │
-│  - Internal Load Balancer (VNet-integrated)                     │
+│  Azure Container Apps Environment (Internal Load Balancer)      │
+│  - Internal Load Balancer Enabled (VNet-integrated)             │
+│  - Public Network Access: Disabled                              │
 │  - Static IP for Private DNS resolution                         │
 │  - Zone-redundant (production)                                  │
-│  Subnet: 10.240.1.0/23                                          │
+│  Subnet: 10.240.0.0/23 (Microsoft requirement for delegation)   │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  Navigator Container App                                │   │
 │  │  - Phoenix/Elixir application (port 4000)               │   │
 │  │  - WebSocket support (Phoenix LiveView)                 │   │
+│  │  - External Enabled: true (VNET access for App Gateway) │   │
 │  │  - Min: 0/1 replicas (dev/prod), Max: 2/5 replicas      │   │
 │  │  - Session affinity (cookie-based)                      │   │
 │  └─────────────────────────────────────────────────────────┘   │
@@ -56,11 +58,11 @@ This document provides detailed infrastructure architecture specifications for i
 
 ### Traffic Flow
 
-1. **Client Request**: User accesses `https://navigator.example.gc.ca` → DNS resolves to Application Gateway public IP
+1. **Client Request**: User accesses `https://navigator-{env}.demo.focisolutions.com` → DNS resolves to Application Gateway public IP
 2. **TLS Termination**: Application Gateway terminates TLS, validates certificate (Let's Encrypt)
 3. **WAF Inspection** (if enabled): Request inspected against OWASP CRS rules
 4. **Private DNS Resolution**: Application Gateway resolves Container Apps internal FQDN via Private DNS zone
-5. **Backend Routing**: Request forwarded to Container Apps internal endpoint (HTTPS, port 443)
+5. **Backend Routing**: Request forwarded to Container Apps internal endpoint (HTTP, port 80)
 6. **Container Apps Ingress**: Internal load balancer routes to Navigator container app replica
 7. **Session Affinity**: Cookie-based affinity ensures WebSocket connections stay on same replica
 8. **Application Processing**: Phoenix/Elixir app processes request, connects to PostgreSQL via private subnet
@@ -216,11 +218,11 @@ backend_address_pool {
 **Backend HTTP Settings**:
 ```hcl
 backend_http_settings {
-  name                                = "ca-backend-https-settings"
+  name                                = "ca-backend-http-settings"
   cookie_based_affinity               = "Enabled"  # Preserves Phoenix LiveView sessions
   affinity_cookie_name                = "ApplicationGatewayAffinity"
-  port                                = 443
-  protocol                            = "Https"
+  port                                = 80
+  protocol                            = "Http"
   request_timeout                     = 180  # Seconds (supports long-lived WebSocket connections)
   pick_host_name_from_backend_address = true  # Use Container Apps internal FQDN as Host header
 
@@ -240,12 +242,13 @@ backend_http_settings {
 - Request timeout 180s: Phoenix LiveView maintains long-lived connections; default 30s insufficient
 - Pick host name from backend: Application Gateway sends Container Apps internal FQDN as Host header for proper routing
 - Connection draining: Gracefully shutdown during scale-in or updates (Container Apps respects 30s graceful shutdown)
+- HTTP protocol: Gateway to container communication uses HTTP as containers are within trusted VNET
 
 **Health Probe**:
 ```hcl
 probe {
   name                                      = "ca-health-probe"
-  protocol                                  = "Https"
+  protocol                                  = "Http"
   pick_host_name_from_backend_http_settings = true
   path                                      = "/"
   interval                                  = 30
@@ -272,14 +275,14 @@ request_routing_rule {
   rule_type                  = "Basic"  # Simple 1:1 listener-to-backend mapping
   http_listener_name         = "https-listener"
   backend_address_pool_name  = "ca-backend-pool"
-  backend_http_settings_name = "ca-backend-https-settings"
+  backend_http_settings_name = "ca-backend-http-settings"
   priority                   = 100
 }
 ```
 
 #### SSL/TLS Certificate Management
 
-**Certificate Upload** (when custom domain provided):
+**Certificate Upload to Application Gateway** (when custom domain provided):
 ```hcl
 dynamic "ssl_certificate" {
   for_each = var.domain_name != null ? [1] : []
@@ -298,10 +301,10 @@ resource "acme_certificate" "navigator" {
   count = var.domain_name != null ? 1 : 0
 
   account_key_pem = acme_registration.account.account_key_pem
-  common_name     = var.domain_name
+  common_name     = "navigator-${var.environment}.${var.domain_name}"  # e.g., navigator-dev.demo.focisolutions.com
 
   dns_challenge {
-    provider = "azure"
+    provider = "azuredns"  # Changed from "azure" (deprecated) to "azuredns"
     config = {
       AZURE_RESOURCE_GROUP = var.resource_group_name
       AZURE_ZONE_NAME      = var.domain_name
@@ -315,7 +318,32 @@ resource "acme_certificate" "navigator" {
 }
 ```
 
-**Rationale**: ACME provider automates Let's Encrypt certificate provisioning and renewal (DNS-01 challenge); min_days_remaining=30 ensures renewal before 90-day certificate expires
+**Container App Environment Certificate** (for Container Apps custom domain binding):
+```hcl
+# Upload certificate to Container Apps environment
+resource "azurerm_container_app_environment_certificate" "navigator" {
+  count                        = var.domain_name != null ? 1 : 0
+  name                         = "navigator-cert-${var.environment}"
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  certificate_blob_base64      = acme_certificate.navigator[0].certificate_p12
+  certificate_password         = acme_certificate.navigator[0].certificate_p12_password
+}
+
+# Bind custom domain to Container App
+resource "azurerm_container_app_custom_domain" "navigator" {
+  count                         = var.domain_name != null ? 1 : 0
+  name                          = "navigator-${var.environment}.${var.domain_name}"
+  container_app_id              = azurerm_container_app.navigator.id
+  container_app_environment_certificate_id = azurerm_container_app_environment_certificate.navigator[0].id
+  certificate_binding_type      = "SniEnabled"
+}
+```
+
+**Rationale**: 
+- ACME provider automates Let's Encrypt certificate provisioning and renewal (DNS-01 challenge using `azuredns` provider)
+- Certificate issued for full subdomain (e.g., `navigator-dev.demo.focisolutions.com`)
+- Certificate uploaded to both Application Gateway (for HTTPS listener) and Container App Environment (for custom domain binding)
+- `min_days_remaining=30` ensures renewal before 90-day certificate expires
 
 #### Web Application Firewall (Optional)
 
@@ -402,19 +430,39 @@ ingress {
 
 **AFTER** (new state):
 ```hcl
+# Container App Environment with internal load balancer
+resource "azurerm_container_app_environment" "this" {
+  name                           = local.cae_name
+  resource_group_name            = azurerm_resource_group.this.name
+  location                       = azurerm_resource_group.this.location
+  infrastructure_subnet_id       = azurerm_subnet.ca.id
+  internal_load_balancer_enabled = true
+  
+  # Required for internal load balancer
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
+}
+
+# Container App with external enabled for VNET access
 ingress {
-  external_enabled           = false  # Internal-only access (VNet)
+  external_enabled           = true   # Set to true to allow connections from same VNET (required for App Gateway communication)
   allow_insecure_connections = false
   target_port                = 4000
-  # No IP restrictions - private VNet access only
+  # transport defaults to Auto (removed explicit configuration)
+  # No IP restrictions - VNET access only due to internal load balancer
 }
 ```
 
 **Critical Impact**:
-- Container Apps no longer directly accessible from internet
+- Container Apps environment uses internal load balancer (not internet accessible)
+- `public_network_access` implicitly set to "Disabled" when internal load balancer is enabled
+- `external_enabled = true` allows connections from same VNET (required for Application Gateway communication)
 - All external traffic must route through Application Gateway
-- Internal FQDN changes format: `<app-name>.internal.<env-default-domain>`
+- Internal FQDN format: `<app-name>.<env-default-domain>` (no `.internal` prefix)
 - Existing health probes, session affinity, and scaling rules unchanged
+- Transport defaults to Auto (supports both HTTP/1.1 and HTTP/2)
 
 #### Session Affinity Configuration
 
@@ -473,7 +521,7 @@ resource "azurerm_subnet" "ca" {
   name                 = "${local.name_prefix}-ca-snet"
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.240.1.0/23"]  # CHANGED from /24 to /23
+  address_prefixes     = ["10.240.0.0/23"]  # CHANGED from 10.240.1.0/24 to 10.240.0.0/23 (Microsoft requirement for VNET delegation)
 
   delegation {
     name = "Microsoft.App/environments"
@@ -488,10 +536,10 @@ resource "azurerm_subnet" "ca" {
 ```
 
 **Rationale for Size Change**:
-- Increased from /24 (254 hosts) to /23 (510 hosts)
+- Changed to 10.240.0.0/23 (510 hosts) as required by Microsoft for Container Apps VNET delegation
 - Enables VNet integration features for Container Apps
 - Provides room for future scaling and additional container apps
-- No overlap with other subnets
+- Microsoft requirement: minimum /23 subnet for Container Apps environment with internal load balancer
 
 **2. PostgreSQL Subnet** (NO CHANGES):
 ```hcl
@@ -542,15 +590,15 @@ resource "azurerm_network_security_group" "ca" {
 
 # NEW RULE: Allow HTTPS from Application Gateway
 resource "azurerm_network_security_rule" "ca_allow_appgw" {
-  name                        = "AllowAppGatewayHttps"
+  name                        = "AllowAppGatewayHttp"
   priority                    = 100
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
   source_port_range           = "*"
-  destination_port_range      = "443"
+  destination_port_range      = "80"
   source_address_prefix       = "10.240.3.0/24"  # Application Gateway subnet
-  destination_address_prefix  = "10.240.1.0/23"  # Container Apps subnet
+  destination_address_prefix  = "10.240.0.0/23"  # Container Apps subnet
   resource_group_name         = azurerm_resource_group.this.name
   network_security_group_name = azurerm_network_security_group.ca.name
 }
@@ -628,18 +676,19 @@ resource "azurerm_private_dns_a_record" "ca_root" {
 
 ### Public DNS Configuration
 
-**Azure DNS Zone** (when custom domain provided):
+**Azure DNS Zone** (for custom domain):
 ```hcl
+# Public DNS zone for custom domain (e.g., demo.focisolutions.com)
 resource "azurerm_dns_zone" "main" {
   count               = var.domain_name != null ? 1 : 0
-  name                = var.domain_name
+  name                = var.domain_name  # e.g., "demo.focisolutions.com"
   resource_group_name = azurerm_resource_group.this.name
 }
 
-# DNS A record pointing to Application Gateway public IP (MODIFIED)
+# DNS A record for subdomain pointing to Application Gateway public IP
 resource "azurerm_dns_a_record" "main" {
   count               = var.domain_name != null ? 1 : 0
-  name                = "@"
+  name                = "navigator-${var.environment}"  # Creates navigator-dev.demo.focisolutions.com or navigator-production.demo.focisolutions.com
   zone_name           = azurerm_dns_zone.main[0].name
   resource_group_name = azurerm_resource_group.this.name
   ttl                 = 300
@@ -647,12 +696,50 @@ resource "azurerm_dns_a_record" "main" {
 }
 ```
 
+**Domain Pattern**:
+- Dev: `navigator-dev.demo.focisolutions.com`
+- Production: `navigator-production.demo.focisolutions.com`
+- ACME certificate issued for full subdomain (e.g., `navigator-dev.demo.focisolutions.com`)
+
 **Change from Existing**: DNS A record now points to Application Gateway public IP instead of Container Apps IP
 
 **ACME DNS-01 Challenge**:
 - ACME provider automatically creates DNS TXT records in Azure DNS zone for domain validation
+- Provider name changed to `azuredns` (from deprecated `azure`)
 - No manual intervention required
 - TXT records cleaned up after validation completes
+
+**Private DNS Zone for Custom Domain** (NEW):
+```hcl
+# Private DNS zone for var.domain_name (e.g., demo.focisolutions.com)
+resource "azurerm_private_dns_zone" "domain" {
+  count               = var.domain_name != null ? 1 : 0
+  name                = var.domain_name
+  resource_group_name = azurerm_resource_group.this.name
+}
+
+# A record for @ pointing to Application Gateway public IP
+resource "azurerm_private_dns_a_record" "domain_root" {
+  count               = var.domain_name != null ? 1 : 0
+  name                = "@"
+  zone_name           = azurerm_private_dns_zone.domain[0].name
+  resource_group_name = azurerm_resource_group.this.name
+  ttl                 = 300
+  records             = [azurerm_public_ip.appgw.ip_address]
+}
+
+# Virtual Network Link for private DNS zone
+resource "azurerm_private_dns_zone_virtual_network_link" "domain" {
+  count                 = var.domain_name != null ? 1 : 0
+  name                  = "${local.name_prefix}-domain-dns-link"
+  resource_group_name   = azurerm_resource_group.this.name
+  private_dns_zone_name = azurerm_private_dns_zone.domain[0].name
+  virtual_network_id    = azurerm_virtual_network.this.id
+  registration_enabled  = false
+}
+```
+
+**Rationale**: Private DNS zone for custom domain enables internal resolution within VNET; replaces Container Apps internal FQDN private DNS zone approach
 
 ---
 
@@ -667,8 +754,9 @@ resource "azurerm_dns_a_record" "main" {
 
 **Layer 2: Application Gateway → Container Apps**:
 - Private networking: Application Gateway in dedicated subnet
-- NSG rules: Container Apps NSG only allows inbound from Application Gateway subnet
-- End-to-end TLS: HTTPS maintained between Application Gateway and Container Apps
+- NSG rules: Container Apps NSG only allows inbound from Application Gateway subnet (port 80)
+- HTTP backend communication: Uses HTTP for gateway to container communication as containers are within trusted VNET
+- TLS termination at Application Gateway provides encryption for external traffic
 
 **Layer 3: Container Apps → PostgreSQL**:
 - Private connectivity: PostgreSQL private delegated subnet
@@ -751,7 +839,7 @@ resource "random_password" "cert_p12_password" {
 - ACME Endpoint: Staging (`https://acme-staging-v02.api.letsencrypt.org/directory`)
 
 **Container Apps** (existing):
-- Subnet: 10.240.1.0/23
+- Subnet: 10.240.0.0/23
 - Min Replicas: 0
 - Max Replicas: 2
 - Container: 0.5 vCPU, 1Gi memory
@@ -776,7 +864,7 @@ resource "random_password" "cert_p12_password" {
 - ACME Endpoint: Production (`https://acme-v02.api.letsencrypt.org/directory`)
 
 **Container Apps** (existing):
-- Subnet: 10.240.1.0/23
+- Subnet: 10.240.0.0/23
 - Min Replicas: 1
 - Max Replicas: 5
 - Container: 1.0 vCPU, 2Gi memory

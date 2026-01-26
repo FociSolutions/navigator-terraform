@@ -34,13 +34,14 @@
 
 **⚠️ CRITICAL**: Network tier MUST complete before Application Gateway can be provisioned
 
-- [X] T009 Modify Container Apps subnet size in terraform/azure/vnet.tf (10.240.1.0/24 → 10.240.1.0/23)
-- [X] T010 [P] Add NSG rule in terraform/azure/security.tf (AllowAppGatewayHttps: 10.240.3.0/24 → 10.240.1.0/23:443)
-- [X] T011 [P] Create Private DNS zone in terraform/azure/dns-private.tf (Container Apps environment default domain)
-- [X] T012 [P] Create virtual network link in terraform/azure/dns-private.tf (link Private DNS zone to VNet)
-- [X] T013 [P] Create wildcard A record in terraform/azure/dns-private.tf (* → Container Apps static IP)
-- [X] T014 [P] Create root A record in terraform/azure/dns-private.tf (@ → Container Apps static IP)
-- [X] T015 Run `terraform validate` - network tier checkpoint
+- [X] T009 Modify Container Apps subnet in terraform/azure/vnet.tf (10.240.1.0/24 → 10.240.0.0/23, Microsoft requirement for delegation)
+- [X] T010 [P] Add NSG rule in terraform/azure/security.tf (AllowAppGatewayHttp: 10.240.3.0/24 → 10.240.0.0/23:80)
+- [X] T011 [P] Create Private DNS zone for Container Apps in terraform/azure/dns-private.tf (environment default domain)
+- [X] T012 [P] Create Private DNS zone for custom domain in terraform/azure/dns-private.tf (var.domain_name)
+- [X] T013 [P] Create virtual network links in terraform/azure/dns-private.tf (link both Private DNS zones to VNet)
+- [X] T014 [P] Create wildcard A record for Container Apps (* → Container Apps static IP)
+- [X] T015 [P] Create root A record for custom domain (@ → Application Gateway public IP)
+- [X] T016 Run `terraform validate` - network tier checkpoint
 
 **Checkpoint**: Network tier complete - Application Gateway can now be provisioned
 
@@ -80,18 +81,22 @@
 
 ### Container Apps Modifications
 
-- [X] T033 Modify Container Apps ingress in terraform/azure/container-apps.tf (external_enabled: true → false)
+- [X] T033 Modify Container App Environment in terraform/azure/container-apps.tf (internal_load_balancer_enabled: false → true)
+- [X] T034 Modify Container App ingress in terraform/azure/container-apps.tf (external_enabled: true for VNET access, remove explicit transport config)
+- [X] T035 Add public_network_access configuration to Container App Environment (set to "Disabled")
 
 ### DNS Modifications
 
-- [X] T034 Modify DNS A record in terraform/azure/dns.tf (point to Application Gateway public IP instead of Container Apps)
-- [X] T035 [P] Remove Container Apps TXT verification record in terraform/azure/dns.tf (azurerm_dns_txt_record.verification)
-- [X] T036 [P] Remove Container Apps custom domain binding in terraform/azure/dns.tf (azurerm_container_app_custom_domain.main)
-- [X] T037 [P] Remove Azure Managed Certificate in terraform/azure/dns.tf (azapi_resource.managed_certificate)
-- [X] T038 [P] Remove certificate bind action in terraform/azure/dns.tf (azapi_resource_action.bind_certificate)
-- [X] T039 [P] Remove certificate unbind action in terraform/azure/dns.tf (azapi_resource_action.unbind_certificate)
+- [X] T036 Modify DNS A record in terraform/azure/dns.tf (point to Application Gateway public IP, subdomain pattern navigator-{env})
+- [X] T037 [P] Remove Container Apps TXT verification record in terraform/azure/dns.tf (azurerm_dns_txt_record.verification)
+- [X] T038 [P] Remove Container Apps custom domain binding in terraform/azure/dns.tf (azurerm_container_app_custom_domain.main)
+- [X] T039 [P] Remove Azure Managed Certificate in terraform/azure/dns.tf (azapi_resource.managed_certificate)
+- [X] T040 [P] Remove certificate bind action in terraform/azure/dns.tf (azapi_resource_action.bind_certificate)
+- [X] T041 [P] Remove certificate unbind action in terraform/azure/dns.tf (azapi_resource_action.unbind_certificate)
+- [X] T042 [P] Add Container App Environment certificate resource in terraform/azure/acme.tf
+- [X] T043 [P] Add Container App custom domain binding in terraform/azure/acme.tf
 
-- [X] T040 Run `terraform validate` - compute/data tier checkpoint
+- [X] T044 Run `terraform validate` - compute/data tier checkpoint
 - [ ] T041 Run `terraform plan` to preview changes
 
 **Checkpoint**: Compute and data tier complete - outputs and Terragrunt configuration can now be finalized
@@ -159,20 +164,21 @@
 ### Critical Dependencies
 
 **Network → Application Gateway:**
-- Private DNS zone MUST be linked to VNet before Application Gateway can resolve Container Apps internal FQDN
-- NSG rule MUST allow Application Gateway → Container Apps traffic
-- Container Apps subnet MUST be expanded to /23 for VNet integration
+- Private DNS zones MUST be linked to VNet before Application Gateway can resolve Container Apps internal FQDN
+- NSG rule MUST allow Application Gateway → Container Apps HTTP traffic (port 80)
+- Container Apps subnet MUST be 10.240.0.0/23 (Microsoft requirement for VNET delegation)
 
 **Application Gateway → Container Apps:**
 - Application Gateway backend pool references Container Apps internal FQDN
-- Container Apps internal ingress MUST be enabled (external_enabled = false)
+- Container App Environment MUST have internal load balancer enabled
+- Container App ingress MUST have external_enabled = true (required for VNET access from Application Gateway)
 
 **ACME Certificate → DNS Zone:**
-- ACME DNS-01 challenge requires Azure DNS zone for TXT record creation
+- ACME DNS-01 challenge requires Azure DNS zone for TXT record creation (using azuredns provider)
 - Custom domain NS records MUST be updated at domain registrar before ACME validation
 
 **DNS A Record → Application Gateway:**
-- DNS A record MUST point to Application Gateway public IP (not Container Apps IP)
+- DNS A record MUST point to Application Gateway public IP (subdomain pattern: navigator-{env}.demo.focisolutions.com)
 
 ### Validation Checkpoints
 

@@ -98,7 +98,7 @@ This architecture secures the Navigator application by converting the existing p
 
 **Backend Configuration**:
 - Backend Pool: Container Apps internal FQDN (`<ca-name>.<cae-default-domain>`)
-- Backend Protocol: HTTPS (port 443)
+- Backend Protocol: HTTP (port 80)
 - Health Probe: HTTP probe to `/` path, 30-second interval, 3 failure threshold
 - Connection Draining: 30-second timeout for graceful shutdown
 - Session Affinity: Cookie-based affinity enabled (preserves existing Container Apps session affinity)
@@ -116,12 +116,13 @@ This architecture secures the Navigator application by converting the existing p
 - `X-Forwarded-For`: Original client IP preserved for logging
 - Host header override: Backend receives Container Apps internal FQDN
 
-**Existing Container Apps Infrastructure** (no changes):
-- Container Apps Environment: VNet-integrated, zone-redundant (production), consumption workload profile
-- Navigator Container App: Min 0 / Max 2 replicas (dev), Min 1 / Max 5 replicas (production)
+**Existing Container Apps Infrastructure** (modified for internal load balancer):
+- Container Apps Environment: VNet-integrated, internal load balancer enabled, zone-redundant (production), consumption workload profile
+- Navigator Container App: Min 0 / Max 2 replicas (dev), Min 1 / Max 5 replicas (production), external_enabled=true for VNET access
 - Container: 0.5 vCPU, 1Gi memory (dev), 1.0 vCPU, 2Gi memory (production)
 - Health probes: Liveness, readiness, startup probes on `/` path
 - Scaling: HTTP concurrency (dev), CPU utilization 70% (production)
+- Transport: Auto (default, supports HTTP/1.1 and HTTP/2)
 
 ### Data Storage
 
@@ -137,10 +138,10 @@ This architecture secures the Navigator application by converting the existing p
 
 **Existing VNet Structure** (10.240.0.0/16):
 ```
-├── Container Apps Subnet: 10.240.1.0/24 → MODIFIED to 10.240.1.0/23 for VNET integration
+├── Container Apps Subnet: 10.240.0.0/23 → MODIFIED to 10.240.0.0/23 (Microsoft requirement for internal load balancer)
 │   ├── Delegation: Microsoft.App/environments
 │   ├── Service Endpoints: Microsoft.Storage
-│   └── NSG: Modified to allow inbound from Application Gateway subnet only
+│   └── NSG: Modified to allow inbound HTTP from Application Gateway subnet only
 │
 ├── PostgreSQL Subnet: 10.240.2.0/24 (no changes)
 │   ├── Delegation: Microsoft.DBforPostgreSQL/flexibleServers
@@ -154,24 +155,29 @@ This architecture secures the Navigator application by converting the existing p
 ```
 
 **Subnet Size Change Rationale**:
-- Container Apps subnet increased from /24 (254 hosts) to /23 (510 hosts)
+- Container Apps subnet changed to 10.240.0.0/23 (510 hosts) per Microsoft requirement
+- Microsoft requires minimum /23 subnet for Container Apps environment with internal load balancer
 - Enables VNET integration features for Container Apps
 - Provides room for future scaling and additional container apps
-- Current address plan: 10.240.1.0/23 replaces 10.240.1.0/24
-- No overlap with other subnets (PostgreSQL at 10.240.2.0/24, App Gateway at 10.240.3.0/24)
 
-**Private DNS Zone** (NEW):
+**Private DNS Zone** (NEW - for Container Apps internal FQDN):
 - Zone Name: `<environment>.canadacentral.azurecontainerapps.io` (Container Apps environment default domain)
 - A Record: `*` → Container Apps environment static IP
 - A Record: `@` → Container Apps environment static IP
 - Virtual Network Link: Links to main VNet for internal DNS resolution
 - Purpose: Enables Application Gateway to resolve Container Apps internal FQDN
 
+**Private DNS Zone for Custom Domain** (NEW):
+- Zone Name: `var.domain_name` (e.g., demo.focisolutions.com)
+- A Record: `@` → Application Gateway public IP
+- Virtual Network Link: Links to main VNet for internal resolution
+- Purpose: Enables internal resolution of custom domain within VNET
+
 **Traffic Flow**:
 ```
 Internet → Application Gateway (10.240.3.0/24)
          → Private DNS Resolution (internal FQDN)
-         → Container Apps Environment (10.240.1.0/23, internal ingress)
+         → Container Apps Environment (10.240.0.0/23, internal load balancer)
          → Navigator Container App (backend)
 ```
 
@@ -181,15 +187,21 @@ Internet → Application Gateway (10.240.3.0/24)
 - No changes required
 
 **Custom Domain DNS** (managed via terraform/azure/dns.tf):
-- Azure DNS Zone: Manages custom domain DNS records (when `var.domain_name` is provided)
-- DNS A Record: Points custom domain to Application Gateway public IP (modified from Container Apps IP)
-- ACME DNS-01 Challenge: Uses Azure DNS zone for domain validation (automated)
+- Azure DNS Zone: Manages custom domain DNS records (e.g., demo.focisolutions.com)
+- DNS A Record: `navigator-{env}` subdomain points to Application Gateway public IP (creates navigator-dev.demo.focisolutions.com or navigator-production.demo.focisolutions.com)
+- ACME DNS-01 Challenge: Uses Azure DNS zone for domain validation with `azuredns` provider (automated)
+- Certificate issued for full subdomain (e.g., navigator-dev.demo.focisolutions.com)
 
 ### Security
 
 **Container Apps Ingress Change** (CRITICAL):
 ```hcl
 # BEFORE (current state):
+resource "azurerm_container_app_environment" "this" {
+  # ... configuration ...
+  internal_load_balancer_enabled = false  # Public access
+}
+
 ingress {
   external_enabled = true  # Direct public access
   allow_insecure_connections = false
@@ -201,11 +213,18 @@ ingress {
 }
 
 # AFTER (new state):
+resource "azurerm_container_app_environment" "this" {
+  # ... configuration ...
+  internal_load_balancer_enabled = true  # Internal load balancer only
+  # public_network_access implicitly set to "Disabled" when internal_load_balancer_enabled = true
+}
+
 ingress {
-  external_enabled = false  # Internal-only access
+  external_enabled = true   # Set to true to allow connections from same VNET (required for App Gateway)
   allow_insecure_connections = false
   target_port = 4000
-  # No IP restrictions needed - private VNet access only
+  # transport defaults to Auto (removed explicit configuration)
+  # No IP restrictions - VNET access only due to internal load balancer
 }
 ```
 
@@ -214,7 +233,7 @@ ingress {
 *Container Apps NSG (MODIFIED)*:
 ```
 Inbound Rules (Priority Order):
-1. Allow HTTPS from Application Gateway subnet (10.240.3.0/24) → Port 443 [NEW]
+1. Allow HTTP from Application Gateway subnet (10.240.3.0/24) → Port 80 [NEW]
 2. Allow PostgreSQL traffic from Container Apps subnet → Port 5432 [EXISTING]
 3. Deny all other inbound traffic [EXISTING]
 
@@ -243,9 +262,10 @@ Outbound Rules:
 - Certificate Management: Automated via ACME provider (Let's Encrypt)
   - Certificate provisioning: Automatic when `var.domain_name` is provided
   - Certificate renewal: Automatic via ACME provider (90-day Let's Encrypt certificates)
-  - DNS validation: HTTP-01 or DNS-01 challenge (configured per environment)
-  - Certificate storage: Managed by ACME provider, uploaded to Application Gateway
+  - DNS validation: DNS-01 challenge using `azuredns` provider (configured per environment)
+  - Certificate storage: Uploaded to Application Gateway and Container App Environment
   - Private key: Never stored in Terraform state (ephemeral resource)
+- Backend communication: HTTP (gateway to container uses unencrypted HTTP within trusted VNET)
 
 **ACME Provider Implementation**:
 ```hcl
@@ -270,12 +290,12 @@ resource "acme_certificate" "navigator" {
   count = var.domain_name != null ? 1 : 0  # Only when custom domain provided
 
   account_key_pem           = acme_registration.account.account_key_pem
-  common_name               = var.domain_name
+  common_name               = "navigator-${var.environment}.${var.domain_name}"  # Full subdomain
   certificate_p12_password  = random_password.cert_p12_password.result
 
   # DNS-01 challenge using existing Azure DNS zone (terraform/azure/dns.tf)
   dns_challenge {
-    provider = "azure"
+    provider = "azuredns"  # Changed from "azure" (deprecated)
     config = {
       AZURE_RESOURCE_GROUP = var.resource_group_name
       AZURE_ZONE_NAME      = var.domain_name  # Managed by azurerm_dns_zone.main
@@ -302,6 +322,24 @@ resource "azurerm_application_gateway" "main" {
       password = acme_certificate.navigator[0].certificate_p12_password
     }
   }
+}
+
+# Upload certificate to Container App Environment
+resource "azurerm_container_app_environment_certificate" "navigator" {
+  count                        = var.domain_name != null ? 1 : 0
+  name                         = "navigator-cert-${var.environment}"
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  certificate_blob_base64      = acme_certificate.navigator[0].certificate_p12
+  certificate_password         = acme_certificate.navigator[0].certificate_p12_password
+}
+
+# Bind custom domain to Container App
+resource "azurerm_container_app_custom_domain" "navigator" {
+  count                         = var.domain_name != null ? 1 : 0
+  name                          = "navigator-${var.environment}.${var.domain_name}"
+  container_app_id              = azurerm_container_app.navigator.id
+  container_app_environment_certificate_id = azurerm_container_app_environment_certificate.navigator[0].id
+  certificate_binding_type      = "SniEnabled"
 }
 ```
 
@@ -331,7 +369,7 @@ resource "azurerm_application_gateway" "main" {
 - Defense-in-depth: Application Gateway WAF layer + Container Apps ingress + NSG rules
 - DDoS protection: Azure platform DDoS Basic included with public IP (no additional cost)
 - SSL/TLS termination: Centralized certificate management at Application Gateway
-- Backend encryption: HTTPS maintained between Application Gateway and Container Apps
+- Backend communication: HTTP used between Application Gateway and Container Apps (private network, encrypted HTTPS only from client to gateway)
 
 ### Environment Configuration
 
@@ -346,7 +384,7 @@ terraform/
 │   ├── variables.tf          # MODIFIED: Add Application Gateway and ACME variables
 │   ├── locals.tf             # MODIFIED: Add Application Gateway naming
 │   ├── vnet.tf               # MODIFIED: Subnet size, NSG rules
-│   ├── container-apps.tf     # MODIFIED: external_enabled = false
+│   ├── container-apps.tf     # MODIFIED: internal_load_balancer_enabled = true, external_enabled = true
 │   ├── app-gateway.tf        # NEW: Application Gateway resource
 │   ├── acme.tf               # NEW: ACME certificate provisioning
 │   ├── dns-private.tf        # MODIFIED: Add Private DNS zone for Container Apps
@@ -373,7 +411,9 @@ terraform/
 | ACME Endpoint | Staging | Production |
 | **Cost** | ~$150/month | ~$250/month (Standard_v2 zone-redundant) |
 | **Container Apps** (existing) | | |
-| Subnet Size | /23 | /23 |
+| Subnet Size | 10.240.0.0/23 | 10.240.0.0/23 |
+| Internal Load Balancer | true | true |
+| External Enabled | true (VNET access) | true (VNET access) |
 | Min Replicas | 0 | 1 |
 | Max Replicas | 2 | 5 |
 | Container CPU | 0.5 vCPU | 1.0 vCPU |
@@ -415,10 +455,10 @@ inputs = {
   appgw_tier                  = "Standard_v2"
   appgw_capacity_min          = 1
   appgw_capacity_max          = 1
-  container_apps_subnet_prefix = "10.240.1.0/23"  # MODIFIED
+  container_apps_subnet_prefix = "10.240.0.0/23"  # MODIFIED: Meets Microsoft's /23 requirement for delegation
   acme_email_address          = "devops-dev@example.gc.ca"
   acme_server_url             = "https://acme-staging-v02.api.letsencrypt.org/directory"
-  domain_name                 = null  # Use default Container Apps domain (no ACME)
+  domain_name                 = "demo.focisolutions.com"  # Subdomain pattern: navigator-{env}.demo.focisolutions.com
 }
 
 # Production environment (terraform/env/production/terragrunt.hcl)
@@ -431,10 +471,10 @@ inputs = {
   appgw_capacity_min          = 2
   appgw_capacity_max          = 5
   waf_mode                    = "Detection"  # Used only if enable_waf = true
-  container_apps_subnet_prefix = "10.240.1.0/23"  # MODIFIED
+  container_apps_subnet_prefix = "10.240.0.0/23"  # MODIFIED: Meets Microsoft's /23 requirement for delegation
   acme_email_address          = "devops@example.gc.ca"
   acme_server_url             = "https://acme-v02.api.letsencrypt.org/directory"
-  domain_name                 = "navigator.example.gc.ca"  # Triggers ACME certificate
+  domain_name                 = "demo.focisolutions.com"  # Subdomain pattern: navigator-{env}.demo.focisolutions.com
 }
 ```
 
@@ -560,7 +600,7 @@ terraform/
 │   ├── locals.tf                    # MODIFIED: Add Application Gateway naming
 │   ├── vnet.tf                      # MODIFIED: Subnet size, NSG rules
 │   ├── security.tf                  # MODIFIED: NSG rules for Application Gateway
-│   ├── container-apps.tf            # MODIFIED: external_enabled = false
+│   ├── container-apps.tf            # MODIFIED: internal_load_balancer_enabled = true, external_enabled = true
 │   ├── app-gateway.tf               # NEW: Application Gateway resource
 │   ├── acme.tf                      # NEW: ACME certificate provisioning and renewal
 │   ├── dns.tf                       # MODIFIED: DNS A record points to App Gateway, remove unnecessary resources
@@ -591,10 +631,10 @@ This structure follows Navigator principles:
 **Modified Files**:
 - `terraform/azure/versions.tf`: Add ACME provider version constraint (~> 2.0)
 - `terraform/azure/provider.tf`: Add ACME provider configuration with server URL
-- `terraform/azure/vnet.tf`: Container Apps subnet size (10.240.1.0/23), NSG rules
-- `terraform/azure/container-apps.tf`: Ingress `external_enabled = false`
+- `terraform/azure/vnet.tf`: Container Apps subnet changed to 10.240.0.0/23 (Microsoft requirement for delegation), NSG rules updated for HTTP (port 80)
+- `terraform/azure/container-apps.tf`: Ingress `internal_load_balancer_enabled = true` and `external_enabled = true` (VNET access required for Application Gateway)
 - `terraform/azure/dns.tf`: DNS A record points to Application Gateway IP, remove Container Apps custom domain resources (TXT record, custom domain binding, managed certificate, bind/unbind actions)
-- `terraform/azure/dns-private.tf`: Private DNS zone for Container Apps internal FQDN resolution
+- `terraform/azure/dns-private.tf`: Private DNS zone for custom domain (var.domain_name) with A record and VNET link
 - `terraform/azure/security.tf`: NSG rules allowing Application Gateway → Container Apps traffic
 - `terraform/azure/variables.tf`: Application Gateway, ACME, and certificate variables
 - `terraform/azure/locals.tf`: Application Gateway resource naming
@@ -605,18 +645,22 @@ This structure follows Navigator principles:
 ## Infrastructure Modifications Summary
 
 **Changes to Existing Resources**:
-1. Container Apps subnet: 10.240.1.0/24 → 10.240.1.0/23 (size increase)
-2. Container Apps ingress: `external_enabled = true` → `external_enabled = false`
-3. Container Apps NSG: Add inbound rule allowing HTTPS from Application Gateway subnet
-4. Private DNS zone: Create zone for Container Apps default domain, link to VNet
-5. DNS A record (terraform/azure/dns.tf): Change from Container Apps static IP to Application Gateway public IP
+1. Container Apps Environment: Set `internal_load_balancer_enabled = true` and `public_network_access = "Disabled"`
+2. Container Apps Ingress: Set `external_enabled = true` (required for VNET access from Application Gateway, despite internal load balancer)
+3. Container Apps Subnet: Changed from 10.240.1.0/24 to 10.240.0.0/23 (Microsoft requirement for subnet delegation)
+4. Container Apps NSG: Add inbound rule allowing HTTP (port 80) from Application Gateway subnet (443→80 protocol change)
+5. Private DNS zone: Create zone for custom domain (var.domain_name) with A record "@" pointing to Container Apps internal IP and VNET link
+6. DNS A record (terraform/azure/dns.tf): Change from Container Apps static IP to Application Gateway public IP
+7. Application Gateway Backend: Use HTTP (not HTTPS) for communication with Container Apps (private network, HTTPS only from client to gateway)
 
 **New Resources**:
-1. Application Gateway: Standard_v2 reverse proxy with HTTPS listener, backend pool, health probe
+1. Application Gateway: Standard_v2 reverse proxy with HTTPS listener, HTTP backend settings, health probe
 2. Application Gateway Public IP: Static IP for external access (zone-redundant in production)
-3. ACME Account Registration: One-time account setup with Let's Encrypt
-4. ACME Certificate: Automated TLS certificate provisioning and renewal (when custom domain provided)
-5. WAF Policy: Optional (feature flag), can be attached to Standard_v2 gateway, OWASP CRS 3.2 protection
+3. ACME Account Registration: One-time account setup with Let's Encrypt (using `azuredns` provider, not deprecated `azure`)
+4. ACME Certificate: Automated TLS certificate provisioning and renewal (uploaded to both Application Gateway and Container App Environment)
+5. Container App Environment Certificate: Upload Let's Encrypt certificate to Container App Environment
+6. Container App Custom Domain: Bind custom domain to Container App with certificate
+7. WAF Policy: Optional (feature flag), can be attached to Standard_v2 gateway, OWASP CRS 3.2 protection
 
 **Removed Resources from terraform/azure/dns.tf**:
 1. `azurerm_dns_txt_record.verification` - Container Apps domain verification TXT record (not needed with Application Gateway)

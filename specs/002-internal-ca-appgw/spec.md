@@ -134,11 +134,15 @@ The container application environment will be configured for internal-only acces
 
 ### Code Validation
 
-- [ ] Container application ingress configuration changed from `external_enabled = true` to `external_enabled = false`
+- [ ] Container App Environment configured with `internal_load_balancer_enabled = true` and `public_network_access = "Disabled"`
+- [ ] Container App ingress configured with `external_enabled = true` (required for VNET access from Application Gateway)
+- [ ] Container Apps subnet changed to `10.240.0.0/23` (Microsoft requirement for delegation)
 - [ ] Reverse proxy resource defined with appropriate sizing for environment (dev vs production)
-- [ ] Backend pool configured with container application internal endpoint
-- [ ] Health probe configured matching container application health check path and port
-- [ ] Network security group rules updated to allow traffic only from reverse proxy subnet
+- [ ] Backend pool configured with container application internal endpoint (HTTP protocol, port 80)
+- [ ] Health probe configured matching container application health check path and port (HTTP protocol)
+- [ ] Network security group rules updated to allow HTTP traffic (port 80) only from reverse proxy subnet
+- [ ] Private DNS zones created for Container Apps internal FQDN and custom domain
+- [ ] ACME certificate provisioned with `azuredns` provider (not deprecated `azure` provider)
 - [ ] All infrastructure code passes `terraform validate` and `terraform fmt -check`
 - [ ] Security scanning (`trivy config terraform/`) shows no HIGH/CRITICAL findings for new resources
 - [ ] Required tags applied to all new reverse proxy resources
