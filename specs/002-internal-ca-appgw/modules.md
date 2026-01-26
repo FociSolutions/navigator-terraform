@@ -1,6 +1,6 @@
 # Module Specifications
 
-**Branch**: `002-internal-ca` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md)
+**Branch**: `002-internal-ca-appgw` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md)
 
 ---
 

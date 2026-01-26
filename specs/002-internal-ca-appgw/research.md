@@ -1,6 +1,6 @@
 # Infrastructure Research: Application Gateway + Internal Container Apps
 
-**Branch**: `002-internal-ca` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md)
+**Branch**: `002-internal-ca-appgw` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md)
 
 This document consolidates comprehensive research findings for implementing Azure Application Gateway as a reverse proxy for internal-only Container Apps, following Azure Well-Architected Framework principles and Terraform best practices.
 

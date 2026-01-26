@@ -1,7 +1,7 @@
 # Architecture Plan: Internal Container Apps with Application Gateway
 
-**Branch**: `002-internal-ca` | **Date**: 2026-01-26 | **Spec**: [spec.md](./spec.md)
-**Input**: Infrastructure specification from `/specs/002-internal-ca/spec.md`
+**Branch**: `002-internal-ca-appgw` | **Date**: 2026-01-26 | **Spec**: [spec.md](./spec.md)
+**Input**: Infrastructure specification from `/specs/002-internal-ca-appgw/spec.md`
 
 **Note**: This plan builds on existing infrastructure in `terraform/azure/` by adding Application Gateway as a reverse proxy for internal-only Container Apps.
 
@@ -538,7 +538,7 @@ remote_state {
 ### Documentation (this infrastructure)
 
 ```text
-specs/002-internal-ca/
+specs/002-internal-ca-appgw/
 ├── spec.md              # Infrastructure specification (technology-agnostic) - /iac.specify
 ├── plan.md              # This file - architecture plan - /iac.plan
 ├── tasks.md             # Implementation tasks - /iac.tasks

@@ -1,6 +1,6 @@
 # Tasks: Internal Container Apps with Application Gateway
 
-**Input**: Design documents from `/specs/002-internal-ca/`
+**Input**: Design documents from `/specs/002-internal-ca-appgw/`
 **Prerequisites**: plan.md, spec.md, research.md, architecture.md, modules.md, quickstart.md
 
 **Organization**: Tasks grouped by infrastructure tier following dependency hierarchy (Foundation → Network → Compute/Data → Application)

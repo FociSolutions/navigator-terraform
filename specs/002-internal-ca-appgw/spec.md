@@ -1,6 +1,6 @@
 # Infrastructure Specification: Internal Container Apps with Reverse Proxy
 
-**Spec ID**: `002-internal-ca`
+**Spec ID**: `002-internal-ca-appgw`
 **Created**: 2026-01-25
 **Status**: Draft
 **Input**: User description: "I need to secure my existing navigator application Azure Container Apps environment configured via terraform/azure/ configurations by making it internal only and routing all external traffic via a reverse proxy."

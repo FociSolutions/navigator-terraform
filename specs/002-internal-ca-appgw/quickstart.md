@@ -1,6 +1,6 @@
 # Provisioning Quickstart Guide
 
-**Branch**: `002-internal-ca` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md)
+**Branch**: `002-internal-ca-appgw` | **Date**: 2026-01-26 | **Plan**: [plan.md](./plan.md)
 
 This guide provides step-by-step instructions for provisioning Azure Application Gateway as a reverse proxy for internal-only Container Apps.
 
@@ -98,7 +98,7 @@ az ad sp create-for-rbac \
 ```bash
 git clone <repository-url>
 cd navigator-az-terraform
-git checkout 002-internal-ca
+git checkout 002-internal-ca-appgw
 ```
 
 **2. Verify Existing Infrastructure**:
