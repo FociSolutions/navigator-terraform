@@ -53,16 +53,16 @@ inputs = {
 
   # ACME Certificate Configuration (Let's Encrypt)
   acme_server_url    = "https://acme-v02.api.letsencrypt.org/directory"  # Production endpoint
-  acme_email_address = get_env("ACME_EMAIL_ADDRESS", "devops@focisolutions.com")
+  acme_email_address = get_env("ACME_EMAIL_ADDRESS")
 
   # Feature Flags
   enable_http_redirect = true  # Redirect HTTP → HTTPS
 
   # High Availability
-  enable_auto_shutdown   = false
   enable_zone_redundancy = true
 
   # Azure OpenAI (optional)
+  #TODO: Only creates the OpenAI instance, not the model deployment
   create_azure_openai = false
 
   # Network Security
@@ -72,8 +72,8 @@ inputs = {
   # Set environment variables before deployment:
   # export GOOGLE_CLIENT_ID="..." GOOGLE_CLIENT_SECRET="..."
   # export MICROSOFT_CLIENT_ID="..." MICROSOFT_CLIENT_SECRET="..." MICROSOFT_TENANT_ID="..."
-  # google_client_id         = get_env("GOOGLE_CLIENT_ID")
-  # google_client_secret     = get_env("GOOGLE_CLIENT_SECRET")
+  google_client_id         = get_env("GOOGLE_CLIENT_ID")
+  google_client_secret     = get_env("GOOGLE_CLIENT_SECRET")
   # microsoft_client_id      = get_env("MICROSOFT_CLIENT_ID")
   # microsoft_client_secret  = get_env("MICROSOFT_CLIENT_SECRET")
   # microsoft_tenant_id      = get_env("MICROSOFT_TENANT_ID")

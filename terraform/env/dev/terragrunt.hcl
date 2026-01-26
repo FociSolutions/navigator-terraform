@@ -62,10 +62,10 @@ inputs = {
   enable_application_insights = false
 
   # Cost Optimization
-  enable_auto_shutdown   = true
   enable_zone_redundancy = false
 
   # Azure OpenAI (optional)
+  #TODO: Only creates the OpenAI instance, not the model deployment
   create_azure_openai = true
 
   # Network Security
