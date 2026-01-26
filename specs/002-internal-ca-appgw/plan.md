@@ -290,7 +290,7 @@ resource "acme_certificate" "navigator" {
   count = var.domain_name != null ? 1 : 0  # Only when custom domain provided
 
   account_key_pem           = acme_registration.account.account_key_pem
-  common_name               = "navigator-${var.environment}.${var.domain_name}"  # Full subdomain
+  common_name               = var.domain_name  # Full subdomain
   certificate_p12_password  = random_password.cert_p12_password.result
 
   # DNS-01 challenge using existing Azure DNS zone (terraform/azure/dns.tf)
@@ -336,7 +336,7 @@ resource "azurerm_container_app_environment_certificate" "navigator" {
 # Bind custom domain to Container App
 resource "azurerm_container_app_custom_domain" "navigator" {
   count                         = var.domain_name != null ? 1 : 0
-  name                          = "navigator-${var.environment}.${var.domain_name}"
+  name                          = var.domain_name
   container_app_id              = azurerm_container_app.navigator.id
   container_app_environment_certificate_id = azurerm_container_app_environment_certificate.navigator[0].id
   certificate_binding_type      = "SniEnabled"
