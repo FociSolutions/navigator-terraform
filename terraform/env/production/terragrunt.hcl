@@ -43,6 +43,21 @@ inputs = {
   # DNS Configuration
   domain_name = "navigator.demo.focisolutions.com"
 
+  # Application Gateway Configuration
+  appgw_sku_name     = "WAF_v2"       # WAF_v2 for production (includes Web Application Firewall)
+  appgw_tier         = "WAF_v2"
+  appgw_capacity_min = 2              # Higher minimum for production availability
+  appgw_capacity_max = 10
+  enable_waf         = true           # Enable WAF for production security
+  waf_mode           = "Prevention"   # Block malicious requests (use "Detection" for testing)
+
+  # ACME Certificate Configuration (Let's Encrypt)
+  acme_server_url    = "https://acme-v02.api.letsencrypt.org/directory"  # Production endpoint
+  acme_email_address = get_env("ACME_EMAIL_ADDRESS", "devops@focisolutions.com")
+
+  # Feature Flags
+  enable_http_redirect = true  # Redirect HTTP → HTTPS
+
   # High Availability
   enable_auto_shutdown   = false
   enable_zone_redundancy = true

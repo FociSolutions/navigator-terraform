@@ -35,7 +35,7 @@ variable "vnet_address_space" {
 variable "container_apps_subnet_address_prefix" {
   description = "Address prefix for Container Apps subnet"
   type        = string
-  default     = "10.240.1.0/24"
+  default     = "10.240.0.0/23"
 }
 
 variable "postgresql_subnet_address_prefix" {
@@ -166,6 +166,66 @@ variable "enable_zone_redundancy" {
   description = "Enable zone redundancy for resources"
   type        = bool
   default     = false
+}
+
+# Application Gateway Configuration
+variable "appgw_sku_name" {
+  description = "Application Gateway SKU name (Standard_v2)"
+  type        = string
+  default     = "Standard_v2"
+}
+
+variable "appgw_tier" {
+  description = "Application Gateway tier (Standard_v2)"
+  type        = string
+  default     = "Standard_v2"
+}
+
+variable "appgw_capacity_min" {
+  description = "Minimum Application Gateway capacity (dev: 1, prod: 2)"
+  type        = number
+}
+
+variable "appgw_capacity_max" {
+  description = "Maximum Application Gateway capacity (dev: 1, prod: 5)"
+  type        = number
+}
+
+# WAF Configuration
+variable "enable_waf" {
+  description = "Enable Web Application Firewall policy"
+  type        = bool
+  default     = false
+}
+
+variable "waf_mode" {
+  description = "WAF mode: Detection or Prevention"
+  type        = string
+  default     = "Detection"
+
+  validation {
+    condition     = contains(["Detection", "Prevention"], var.waf_mode)
+    error_message = "WAF mode must be Detection or Prevention"
+  }
+}
+
+# ACME Configuration
+variable "acme_server_url" {
+  description = "ACME server URL (staging for dev, production for prod)"
+  type        = string
+}
+
+variable "acme_email_address" {
+  description = "Email for ACME account registration and renewal notifications"
+  type        = string
+  sensitive   = true
+}
+
+# Feature Flags
+variable "enable_http_redirect" {
+  description = "Enable HTTP to HTTPS redirect"
+  type        = bool
+  default     = true
 }
 
 variable "create_azure_openai" {

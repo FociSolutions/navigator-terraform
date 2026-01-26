@@ -26,7 +26,7 @@ inputs = {
   # Container Apps Configuration (minimal for dev)
   container_cpu    = 0.5
   container_memory = "1Gi"
-  min_replicas     = 0  # Scale to zero for cost savings
+  min_replicas     = 1  # Scale to zero for cost savings
   max_replicas     = 2
 
   # PostgreSQL Configuration (Burstable tier for dev)
@@ -42,6 +42,21 @@ inputs = {
 
   # DNS Configuration
   domain_name = "navigator-dev.demo.focisolutions.com"
+
+  # Application Gateway Configuration
+  appgw_sku_name     = "Standard_v2"
+  appgw_tier         = "Standard_v2"
+  appgw_capacity_min = 1
+  appgw_capacity_max = 2
+  enable_waf         = false  # WAF requires WAF_v2 tier (additional cost)
+  # waf_mode         = "Prevention"  # Only used if enable_waf = true
+
+  # ACME Certificate Configuration (Let's Encrypt)
+  acme_server_url    = "https://acme-staging-v02.api.letsencrypt.org/directory"  # Staging for dev
+  acme_email_address = get_env("ACME_EMAIL_ADDRESS")
+
+  # Feature Flags
+  enable_http_redirect = true  # Redirect HTTP → HTTPS
 
   # Monitoring (disabled for dev to reduce costs)
   enable_application_insights = false

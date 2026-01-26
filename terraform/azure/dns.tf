@@ -18,9 +18,9 @@ resource "azurerm_dns_zone" "main" {
   })
 }
 
-# T052: A record pointing to Container Apps Environment static IP address
-# For apex domains (e.g., navigator-dev.demo.focisolutions.com), use A record with Container Apps Environment static IP
-# Azure DNS routes custom domain traffic to Container Apps Environment
+# T034: A record pointing to Application Gateway public IP address
+# For apex domains (e.g., navigator-dev.demo.focisolutions.com), use A record with Application Gateway public IP
+# Azure DNS routes custom domain traffic to Application Gateway (reverse proxy for internal Container Apps)
 resource "azurerm_dns_a_record" "container_app" {
   count = var.domain_name != null ? 1 : 0
 
@@ -29,140 +29,33 @@ resource "azurerm_dns_a_record" "container_app" {
   resource_group_name = var.resource_group_name
   ttl                 = 300
 
-  # Point to Container Apps Environment static IP address
-  # Container Apps Environment provides a dedicated static IP for external ingress
-  records = [azurerm_container_app_environment.main.static_ip_address]
+  # T034: Point to Application Gateway public IP address (changed from Container Apps static IP)
+  records = [azurerm_public_ip.appgw.ip_address]
 
   tags = merge(var.tags, {
     Environment = var.environment
-    Name        = "container-app-a-record"
+    Name        = "app-gateway-a-record"
   })
 }
 
-# Domain verification TXT record for Container Apps custom domain
-# Required for Azure to verify domain ownership before binding
-# The asuid prefix is required by Azure, but trimmed from the custom domain name property
-resource "azurerm_dns_txt_record" "verification" {
-  count = var.domain_name != null ? 1 : 0
-
-  name                = "asuid" # Domain verification prefix required by Azure
-  zone_name           = azurerm_dns_zone.main[0].name
-  resource_group_name = var.resource_group_name
-  ttl                 = 300
-
-  record {
-    value = azurerm_container_app.navigator.custom_domain_verification_id
-  }
-
-  tags = merge(var.tags, {
-    Environment = var.environment
-    Name        = "domain-verification"
-  })
-}
-
-# T053: Add custom domain to Container App (STEP 1: Initial binding without certificate)
-# This satisfies Azure's requirement that the domain must be bound to the container app
-# before a managed certificate can be created for it
-# See: https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510
-resource "azurerm_container_app_custom_domain" "main" {
-  count = var.domain_name != null ? 1 : 0
-
-  name             = var.domain_name
-  container_app_id = azurerm_container_app.navigator.id
-
-  # DNS records must exist for domain verification before binding
-  depends_on = [
-    azurerm_dns_a_record.container_app,
-    azurerm_dns_txt_record.verification
-  ]
-
-  # Azure will populate certificate fields asynchronously, ignore changes to prevent resource recreation
-  lifecycle {
-    ignore_changes = [
-      certificate_binding_type,
-      container_app_environment_certificate_id,
-    ]
-  }
-}
-
-# T054: Create Azure Managed Certificate (STEP 2: Certificate creation)
-# Now that the custom domain is bound to the container app, Azure allows certificate creation
-# This resource creates a free managed certificate with automatic renewal by Azure
-resource "azapi_resource" "managed_certificate" {
-  count = var.domain_name != null ? 1 : 0
-
-  type      = "Microsoft.App/managedEnvironments/managedCertificates@2024-03-01"
-  name      = replace(var.domain_name, ".", "-") # Certificate name: dots replaced with hyphens
-  parent_id = azurerm_container_app_environment.main.id
-  location  = var.location
-
-  body = {
-    properties = {
-      subjectName             = var.domain_name
-      domainControlValidation = "HTTP" # HTTP validation for apex domains with A records
-    }
-  }
-
-  # CRITICAL: Custom domain must be added to container app FIRST
-  # Otherwise Azure returns: RequireCustomHostnameInEnvironment error
-  depends_on = [
-    azurerm_container_app_custom_domain.main
-  ]
-
-  response_export_values = ["*"]
-
-  timeouts {
-    create = "20m" # Certificate provisioning can take 10-15 minutes
-    delete = "10m"
-  }
-}
-
-# T055: Bind managed certificate to custom domain (STEP 3: Certificate binding on apply)
-# Uses azapi_resource_action to PATCH the container app's ingress configuration
-# This updates the existing custom domain binding to use the managed certificate
-resource "azapi_resource_action" "bind_certificate" {
-  count = var.domain_name != null ? 1 : 0
-
-  resource_id = azurerm_container_app.navigator.id
-  type        = "Microsoft.App/containerApps@2024-03-01"
-  method      = "PATCH"
-  when        = "apply" # Execute during terraform apply
-
-  body = {
-    properties = {
-      configuration = {
-        ingress = {
-          customDomains = [
-            {
-              bindingType   = "SniEnabled"
-              name          = var.domain_name
-              certificateId = azapi_resource.managed_certificate[0].output.id
-            }
-          ]
-        }
-      }
-    }
-  }
-}
-
-# T056: Unbind custom domain on destroy (STEP 4: Cleanup on terraform destroy)
-# Removes custom domain binding before deleting the certificate
-# This prevents deletion errors when tearing down infrastructure
-resource "azapi_resource_action" "unbind_certificate" {
-  count = var.domain_name != null ? 1 : 0
-
-  resource_id = azurerm_container_app.navigator.id
-  type        = "Microsoft.App/containerApps@2024-03-01"
-  method      = "PATCH"
-  when        = "destroy" # Execute during terraform destroy
-
-  body = {
-    properties = {
-      configuration = {
-        ingress = {
-          customDomains = []
-        }
-      }
-    }
-  }
-}
+# ============================================================================
+# Removed Resources (T035-T039)
+# ============================================================================
+# The following resources have been removed as Application Gateway now handles
+# SSL/TLS termination using ACME certificates (acme.tf):
+#
+# - azurerm_dns_txt_record.verification (T035)
+#   Replaced by: ACME DNS-01 challenge TXT records (auto-managed)
+#
+# - azurerm_container_app_custom_domain.main (T036)
+#   No longer needed: Application Gateway routes to internal Container Apps FQDN
+#
+# - azapi_resource.managed_certificate (T037)
+#   Replaced by: ACME certificate provisioning (acme.tf)
+#
+# - azapi_resource_action.bind_certificate (T038)
+#   No longer needed: Certificate bound to Application Gateway, not Container Apps
+#
+# - azapi_resource_action.unbind_certificate (T039)
+#   No longer needed: No custom domain binding on Container Apps
+# ============================================================================

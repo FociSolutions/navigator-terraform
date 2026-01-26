@@ -35,6 +35,21 @@ resource "azurerm_network_security_group" "container_apps" {
 }
 
 # Container Apps NSG Rules - Inbound
+# NEW: Allow HTTPS from Application Gateway subnet
+resource "azurerm_network_security_rule" "container_apps_inbound_appgw_https" {
+  access                      = "Allow"
+  destination_address_prefix  = var.container_apps_subnet_address_prefix
+  destination_port_range      = "443"
+  direction                   = "Inbound"
+  name                        = "AllowAppGatewayHttps"
+  network_security_group_name = azurerm_network_security_group.container_apps.name
+  priority                    = 100
+  protocol                    = "Tcp"
+  resource_group_name         = var.resource_group_name
+  source_address_prefix       = var.appgw_subnet_address_prefix
+  source_port_range           = "*"
+}
+
 # trivy:ignore:AVD-AZU-0047 Public web application requires unrestricted HTTPS inbound access
 resource "azurerm_network_security_rule" "container_apps_inbound_https" {
   access                      = "Allow"
@@ -43,7 +58,7 @@ resource "azurerm_network_security_rule" "container_apps_inbound_https" {
   direction                   = "Inbound"
   name                        = "AllowHttpsInbound"
   network_security_group_name = azurerm_network_security_group.container_apps.name
-  priority                    = 100
+  priority                    = 110
   protocol                    = "Tcp"
   resource_group_name         = var.resource_group_name
   source_address_prefix       = "*"
