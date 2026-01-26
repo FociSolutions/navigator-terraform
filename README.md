@@ -10,9 +10,16 @@ Navigator is an Elixir/Phoenix web application providing real-time threat modeli
 
 ### Azure Services Deployed
 
+- **Azure Application Gateway**: Reverse proxy with TLS termination and WAF protection
+  - Public IP (zone-redundant in production)
+  - Let's Encrypt certificates via ACME DNS-01 challenge
+  - HTTP→HTTPS redirect
+  - Health probes to Container Apps backend
+  - Optional Web Application Firewall (OWASP CRS 3.2)
+
 - **Azure Container Apps**: Serverless container runtime for Navigator application
-  - VNet-integrated with private subnet
-  - Session affinity enabled for Phoenix LiveView WebSocket support
+  - Internal load balancer (VNet-only access via Application Gateway)
+  - Session affinity for Phoenix LiveView WebSocket support
   - Auto-scaling based on HTTP requests (dev) or CPU utilization (production)
   - Health probes for startup and liveness monitoring
 
@@ -23,18 +30,20 @@ Navigator is an Elixir/Phoenix web application providing real-time threat modeli
   - Private DNS zone for secure connectivity
 
 - **Azure Virtual Network**: Network isolation and security
-  - 3 subnets: Container Apps, PostgreSQL, Application Gateway (reserved)
+  - 3 subnets: Container Apps (10.240.0.0/23), PostgreSQL (10.240.2.0/24), Application Gateway (10.240.3.0/24)
   - Network Security Groups (NSGs) for traffic control
+  - Private DNS zones for Container Apps internal FQDN resolution
   - Service Endpoints for secure Azure service access
   - Optional NAT Gateway for static outbound IP (zone-redundant environments)
 
 - **Azure DNS Zone** (optional): Custom domain support
-  - Managed DNS zone for custom domains
-  - Automatic SSL certificate provisioning via Azure Managed Certificates
-  - A records pointing to Container Apps ingress
+  - Public DNS zone for subdomain (navigator-{env}.demo.focisolutions.com)
+  - Automatic SSL certificate provisioning via Let's Encrypt (ACME provider)
+  - A records pointing to Application Gateway public IP
 
 - **Log Analytics Workspace**: Centralized logging and monitoring
   - Container Apps logs and metrics
+  - Application Gateway access and performance logs
   - Query interface for troubleshooting
   - Retention: 30 days (dev), 90 days (production)
 
@@ -101,16 +110,18 @@ navigator-az-terraform/
 ├── terraform/
 │   ├── azure/                    # Shared Terraform module (infrastructure code)
 │   │   ├── versions.tf           # Provider version constraints
-│   │   ├── provider.tf           # Azure provider configuration
+│   │   ├── provider.tf           # Azure and ACME provider configuration
 │   │   ├── variables.tf          # Input variable definitions
 │   │   ├── outputs.tf            # Infrastructure outputs
 │   │   ├── vnet.tf               # Virtual Network, subnets, NAT Gateway
 │   │   ├── security.tf           # Network Security Groups (NSGs)
-│   │   ├── dns-private.tf        # Private DNS zones for PostgreSQL
+│   │   ├── dns-private.tf        # Private DNS zones for Container Apps and PostgreSQL
 │   │   ├── dns.tf                # Public DNS zone and custom domain (optional)
 │   │   ├── postgresql.tf         # PostgreSQL Flexible Server + database
 │   │   ├── secrets.tf            # Random passwords for PostgreSQL, Phoenix
 │   │   ├── container-apps.tf     # Container Apps Environment + Navigator app
+│   │   ├── app-gateway.tf        # Application Gateway, public IP, WAF policy
+│   │   ├── acme.tf               # Let's Encrypt certificate management
 │   │   ├── acr.tf                # Azure Container Registry (optional)
 │   │   ├── storage.tf            # Storage Account for user uploads (optional)
 │   │   ├── auth-openai.tf        # Azure OpenAI Cognitive Services (optional)
@@ -137,13 +148,16 @@ navigator-az-terraform/
 ### Initial Deployment
 
 > [!IMPORTANT]
-> If deploying with a custom domain (`domain_name` variable set) - the **first `terraform apply` will fail** during custom domain binding. This is expected due to a [limitation](https://github.com/hashicorp/terraform-provider-azurerm/issues/21866#issuecomment-2455147510) in upstream terraform provider.
+> If deploying with a custom domain (`domain_name` variable set) - deployment requires a **two-step process** for ACME DNS-01 validation.
+
+#### Step 1: Initial Apply (DNS Zone Creation)
 
 1. **Run initial deployment:**
    ```bash
+   cd terraform/env/{dev|production}
    terragrunt apply
    ```
-   This creates the DNS zone but fails at custom domain binding.
+   This creates the public DNS zone and Application Gateway infrastructure.
 
 2. **Configure NS records at your domain registrar:**
    ```bash
@@ -152,18 +166,35 @@ navigator-az-terraform/
    ```
    Update your domain registrar's NS records with these 4 Azure DNS name servers.
 
+   Example for `demo.focisolutions.com`:
+   ```
+   demo.focisolutions.com. IN NS ns1-XX.azure-dns.com.
+   demo.focisolutions.com. IN NS ns2-XX.azure-dns.net.
+   demo.focisolutions.com. IN NS ns3-XX.azure-dns.org.
+   demo.focisolutions.com. IN NS ns4-XX.azure-dns.info.
+   ```
+
 3. **Wait for DNS propagation** (15 minutes to 48 hours). Verify with:
    ```bash
-   dig NS navigator-dev.demo.focisolutions.com
+   dig NS demo.focisolutions.com @8.8.8.8
    ```
+
+#### Step 2: Re-Apply (Certificate Provisioning)
 
 4. **Re-run deployment:**
    ```bash
    terragrunt apply
    ```
-   This completes the certificate creation and HTTPS binding.
+   This triggers ACME DNS-01 challenge validation, provisions Let's Encrypt certificate, and uploads to Application Gateway.
 
-**Without a custom domain**, deployment succeeds on first apply.
+**Without a custom domain** (`domain_name = null`), deployment succeeds on first apply using Application Gateway's default domain.
+
+#### Accessing the Application
+
+After successful deployment:
+
+- **With custom domain**: `https://navigator-{env}.demo.focisolutions.com` (e.g., `navigator-dev.demo.focisolutions.com`)
+- **Without custom domain**: Use Application Gateway public IP from outputs (`terragrunt output appgw_public_ip`)
 
 ### Authentication Provider Configuration (Optional)
 
@@ -311,8 +342,13 @@ terragrunt output
 
 **Available Outputs**:
 
-- `container_apps_url`: Full HTTPS URL of the Navigator application
-- `container_apps_fqdn`: FQDN of the Container App ingress
+- `container_apps_url`: Full HTTPS URL of the Navigator application (via Application Gateway)
+- `container_apps_fqdn`: Internal FQDN of the Container App
+- `container_apps_internal_fqdn`: Container Apps internal FQDN (backend)
+- `appgw_public_ip`: Application Gateway public IP address
+- `appgw_fqdn`: Application Gateway public FQDN
+- `certificate_expiry`: Let's Encrypt certificate expiry date (if custom domain configured)
+- `private_dns_zone_name`: Private DNS zone name for Container Apps
 - `postgresql_fqdn`: PostgreSQL server FQDN (sensitive)
 - `postgresql_connection_string`: Ecto-format connection string (sensitive)
 - `dns_zone_nameservers`: Azure DNS name servers (for NS record configuration)
@@ -332,25 +368,45 @@ terragrunt output
 ### Security Features
 
 1. **Network Isolation**:
+   - Application Gateway as single public entry point with TLS termination
+   - Container Apps with internal load balancer (no direct internet access)
    - Private VNet integration for all compute and data resources
    - Network Security Groups (NSGs) with least-privilege rules
    - Private DNS zones for internal name resolution
    - Service Endpoints for secure Azure service access
 
-2. **Data Encryption**:
-   - Encryption at rest for PostgreSQL (Azure-managed keys)
-   - TLS encryption for data in transit (PostgreSQL, Container Apps)
-   - Container Apps secrets encrypted by Azure platform
+2. **Defense-in-Depth**:
+   - **Layer 1**: Application Gateway with TLS 1.2+ enforcement and strong cipher suites
+   - **Layer 2**: Optional Web Application Firewall (OWASP CRS 3.2, Bot Manager)
+   - **Layer 3**: NSG rules restricting traffic to Application Gateway subnet only
+   - **Layer 4**: Container Apps internal load balancer with VNet-only access
+   - **Layer 5**: PostgreSQL private subnet with delegated access
 
-3. **Secret Management**:
+3. **Data Encryption**:
+   - Encryption at rest for PostgreSQL (Azure-managed keys)
+   - TLS 1.2+ encryption for data in transit (all connections)
+   - Container Apps secrets encrypted by Azure platform
+   - Let's Encrypt certificates for HTTPS (auto-renewal 30 days before expiry)
+
+4. **Certificate Management**:
+   - Automated certificate provisioning via ACME provider (Let's Encrypt)
+   - DNS-01 challenge using Azure DNS for domain validation
+   - Certificate auto-renewal (min_days_remaining = 30)
+   - Certificates uploaded to both Application Gateway and Container Apps Environment
+   - Staging endpoint for dev (avoids Let's Encrypt rate limits)
+   - Production endpoint for prod (trusted certificates)
+
+5. **Secret Management**:
    - Auto-generated secrets via Terraform `random_password` resources
    - Secrets stored in Terraform state (encrypted at rest in Azure Storage)
    - Container Apps secrets injected at runtime (not visible in logs)
+   - ACME account keys stored in state (never exposed in logs)
 
-4. **Access Control**:
+6. **Access Control**:
    - Azure RBAC for resource-level permissions
    - Managed identities for Container Apps (no credentials in code)
    - PostgreSQL accessible only from Container Apps subnet
+   - Application Gateway as single ingress point
 
 ### Security Scanning
 

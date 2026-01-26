@@ -122,14 +122,14 @@
 
 ### Documentation Updates
 
-- [ ] T047 Update README.md architecture section with Application Gateway details
-- [ ] T048 Update README.md deployment workflow with custom domain DNS configuration steps
-- [ ] T049 Update README.md troubleshooting section with Application Gateway and ACME troubleshooting
-- [ ] T050 Update README.md outputs section with Application Gateway and certificate outputs
-- [ ] T051 Update README.md security section with WAF and ACME certificate management
+- [X] T047 Update README.md architecture section with Application Gateway details
+- [X] T048 Update README.md deployment workflow with custom domain DNS configuration steps
+- [X] T049 Update README.md troubleshooting section with Application Gateway and ACME troubleshooting
+- [X] T050 Update README.md outputs section with Application Gateway and certificate outputs
+- [X] T051 Update README.md security section with WAF and ACME certificate management
 
-- [ ] T052 Run `terraform validate` - application tier checkpoint
-- [ ] T053 Run `terraform plan -var-file=terraform.tfvars.dev` to preview dev environment changes
+- [X] T052 Run `terraform validate` - application tier checkpoint
+- [X] T053 Run `terraform plan -var-file=terraform.tfvars.dev` to preview dev environment changes
 
 **Checkpoint**: Application tier complete - infrastructure ready for deployment validation
 
@@ -139,14 +139,14 @@
 
 **Purpose**: Final validation, formatting, security scanning, and deployment readiness
 
-- [ ] T054 Run `terraform fmt -recursive` to format all .tf files
-- [ ] T055 Run `terraform validate` across all configurations
-- [ ] T056 [P] Run Trivy security scan on terraform/azure/ (trivy config terraform/azure/)
-- [ ] T057 [P] Review Trivy findings and document expected exceptions (Application Gateway subnet without NSG, public IP)
-- [ ] T058 [P] Verify resource naming follows conventions in terraform/azure/locals.tf
-- [ ] T059 [P] Verify all sensitive variables marked as sensitive in terraform/azure/variables.tf
-- [ ] T060 Run `terraform plan` for dev environment final validation
-- [ ] T061 Cross-reference generated code with quickstart.md validation steps
+- [X] T054 Run `terraform fmt -recursive` to format all .tf files
+- [X] T055 Run `terraform validate` across all configurations
+- [X] T056 [P] Run Trivy security scan on terraform/azure/ (trivy config terraform/azure/)
+- [X] T057 [P] Review Trivy findings and document expected exceptions (Application Gateway subnet without NSG, public IP)
+- [X] T058 [P] Verify resource naming follows conventions in terraform/azure/locals.tf
+- [X] T059 [P] Verify all sensitive variables marked as sensitive in terraform/azure/variables.tf
+- [X] T060 Run `terraform plan` for dev environment final validation
+- [X] T061 Cross-reference generated code with quickstart.md validation steps
 
 ---
 
