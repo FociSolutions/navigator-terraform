@@ -49,8 +49,10 @@ resource "acme_certificate" "main" {
     provider = "azuredns"
 
     config = {
-      AZURE_RESOURCE_GROUP = var.resource_group_name
-      AZURE_ZONE_NAME      = var.domain_name
+      AZURE_SUBSCRIPTION_ID = data.azurerm_client_config.current.subscription_id
+      AZURE_TENANT_ID       = data.azurerm_client_config.current.tenant_id
+      AZURE_RESOURCE_GROUP  = var.resource_group_name
+      AZURE_ZONE_NAME       = var.domain_name
     }
   }
 
