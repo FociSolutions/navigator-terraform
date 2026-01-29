@@ -101,6 +101,15 @@ az login --scope https://management.azure.com//.default
 az account set --subscription <SUBSCRIPTION_ID_OR_NAME>
 ```
 
+### Set up environment variables
+
+```bash
+export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+ACCOUNT_KEY=$(az storage account keys list --resource-group navigator-tfstate-rg --account-name navtfstatedev --query '[0].value' -o tsv)
+export ARM_ACCESS_KEY=$ACCOUNT_KEY
+export ACME_EMAIL_ADDRESS="your-email@yourdomain.com"
+```
+
 ---
 
 ## Repository Structure
