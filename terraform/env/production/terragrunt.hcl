@@ -12,7 +12,7 @@ remote_state {
     storage_account_name = "navtfstateprod"
     container_name       = "tfstate"
     key                  = "navigator.terraform.tfstate"
-    # use_azuread_auth     = true
+    use_azuread_auth     = true
   }
 }
 
@@ -37,7 +37,7 @@ inputs = {
   postgres_require_ssl  = false  # TLS optional (can be enabled for defense-in-depth)
 
   # Storage Configuration
-  create_storage_account = true
+  create_storage_account = false
   storage_account_sku    = "Standard_ZRS"  # Zone-redundant storage
 
   # DNS Configuration
@@ -63,7 +63,7 @@ inputs = {
 
   # Azure OpenAI (optional)
   #TODO: Only creates the OpenAI instance, not the model deployment
-  create_azure_openai = false
+  create_azure_openai = true
 
   # Network Security
   enable_outbound_internet = true

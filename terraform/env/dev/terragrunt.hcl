@@ -25,7 +25,7 @@ inputs = {
 
   # Container Apps Configuration (minimal for dev)
   container_cpu    = 0.5
-  container_memory = "1Gi"
+  container_memory = "1.0Gi"
   min_replicas     = 0  # Scale to zero for cost savings
   max_replicas     = 2
 
@@ -57,9 +57,6 @@ inputs = {
 
   # Feature Flags
   enable_http_redirect = true  # Redirect HTTP → HTTPS
-
-  # Monitoring (disabled for dev to reduce costs)
-  enable_application_insights = false
 
   # Cost Optimization
   enable_zone_redundancy = false
