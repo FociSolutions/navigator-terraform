@@ -43,14 +43,26 @@ inputs = {
   # DNS Configuration
   domain_name = "navigator-dev.demo.focisolutions.com"
 
-  # Monitoring (disabled for dev to reduce costs)
-  enable_application_insights = false
+  # Application Gateway Configuration
+  appgw_sku_name     = "Standard_v2"
+  appgw_tier         = "Standard_v2"
+  appgw_capacity_min = 1
+  appgw_capacity_max = 2
+  enable_waf         = false  # WAF requires WAF_v2 tier (additional cost)
+  # waf_mode         = "Prevention"  # Only used if enable_waf = true
+
+  # ACME Certificate Configuration (Let's Encrypt)
+  acme_server_url    = "https://acme-staging-v02.api.letsencrypt.org/directory"  # Staging for dev
+  acme_email_address = get_env("ACME_EMAIL_ADDRESS")
+
+  # Feature Flags
+  enable_http_redirect = true  # Redirect HTTP → HTTPS
 
   # Cost Optimization
-  enable_auto_shutdown   = true
   enable_zone_redundancy = false
 
   # Azure OpenAI (optional)
+  #TODO: Only creates the OpenAI instance, not the model deployment
   create_azure_openai = true
 
   # Network Security

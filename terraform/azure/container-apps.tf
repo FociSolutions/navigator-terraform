@@ -25,8 +25,10 @@ resource "azurerm_container_app_environment" "main" {
   name                       = local.cae_name
   resource_group_name        = var.resource_group_name
 
-  infrastructure_subnet_id = azurerm_subnet.container_apps.id
-  zone_redundancy_enabled  = var.enable_zone_redundancy
+  public_network_access          = "Disabled"
+  internal_load_balancer_enabled = true
+  infrastructure_subnet_id       = azurerm_subnet.container_apps.id
+  zone_redundancy_enabled        = var.enable_zone_redundancy
 
   infrastructure_resource_group_name = "ME_${local.cae_name}_${var.resource_group_name}_${var.location}"
   workload_profile {
@@ -38,6 +40,19 @@ resource "azurerm_container_app_environment" "main" {
     Environment = var.environment
     Name        = local.cae_name
   })
+}
+
+# Container App Environment Certificate for Custom Domain
+# Uploads the ACME certificate to Container Apps Environment to enable custom domain binding
+resource "azurerm_container_app_environment_certificate" "main" {
+  count = var.domain_name != null ? 1 : 0
+
+  name                         = "${local.name_prefix}-cert"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  certificate_blob_base64      = acme_certificate.main[0].certificate_p12
+  certificate_password         = random_password.certificate_p12[0].result
+
+  tags = var.tags
 }
 
 # T041-T048: Navigator Container App
@@ -286,12 +301,16 @@ resource "azurerm_container_app" "navigator" {
     }
   }
 
-  # T045: Ingress configuration (HTTPS only, external, port 4000)
+  # T045: Ingress configuration
+  # T033: Internal-only - traffic routes via Application Gateway
+  # Note: Custom domain binding moved to separate azurerm_container_app_custom_domain resource (azurerm 4.x requirement)
   ingress {
-    allow_insecure_connections = false # Enforce HTTPS
+    allow_insecure_connections = true # Allow HTTP from Application Gateway (TLS terminated at App Gateway)
     external_enabled           = true
     target_port                = var.container_port
-    transport                  = "http"
+
+    # Note: custom_domain is read-only in azurerm 4.x
+    # Use azurerm_container_app_custom_domain resource instead (see below)
 
     # IP Security Restriction: Allow all traffic (adjust for production)
     ip_security_restriction {
@@ -310,6 +329,23 @@ resource "azurerm_container_app" "navigator" {
     Environment = var.environment
     Name        = local.ca_name
   })
+}
+
+# Custom Domain Binding for Container App
+# Required in azurerm 4.x - inline custom_domain config removed from ingress block
+# Binds the custom domain to the Container App with SNI-enabled certificate
+resource "azurerm_container_app_custom_domain" "main" {
+  count = var.domain_name != null ? 1 : 0
+
+  name                                     = var.domain_name
+  container_app_id                         = azurerm_container_app.navigator.id
+  container_app_environment_certificate_id = azurerm_container_app_environment_certificate.main[0].id
+  certificate_binding_type                 = "SniEnabled"
+
+  depends_on = [
+    azurerm_container_app_environment_certificate.main,
+    azapi_resource_action.navigator_session_affinity
+  ]
 }
 
 # T039b: Session affinity configuration using azapi provider

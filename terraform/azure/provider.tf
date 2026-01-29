@@ -10,3 +10,11 @@ provider "azurerm" {
     }
   }
 }
+
+provider "acme" {
+  server_url = var.acme_server_url
+}
+
+# Azure client configuration data source
+# Used by ACME provider for explicit DNS zone authentication
+data "azurerm_client_config" "current" {}

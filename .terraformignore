@@ -1,0 +1,25 @@
+# Git files
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+specs/
+
+# CI/CD
+.github/
+
+# Navigator application source (submodule)
+navigator/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

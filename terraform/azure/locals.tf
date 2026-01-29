@@ -20,10 +20,12 @@ locals {
   db_vnet_link   = "${local.name_prefix}-db-vnet-link"
 
   # Compute
-  law_name = "${local.name_prefix}-law"
-  cae_name = "${local.name_prefix}-cae"
-  ca_name  = local.name_prefix                                    # Single instance, no -001 suffix
-  acr_name = "nav${var.environment}acr${local.uniqueness_suffix}" # No hyphens for ACR
+  law_name       = "${local.name_prefix}-law"
+  cae_name       = "${local.name_prefix}-cae"
+  ca_name        = local.name_prefix                                    # Single instance, no -001 suffix
+  acr_name       = "nav${var.environment}acr${local.uniqueness_suffix}" # No hyphens for ACR
+  appgw_name     = "${local.name_prefix}-appgw"
+  appgw_pip_name = "${local.name_prefix}-appgw-pip"
 
   # Data
   psql_name = "${local.name_prefix}-psql"

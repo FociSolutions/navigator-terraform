@@ -5,13 +5,42 @@ output "container_apps_environment_id" {
 }
 
 output "container_apps_fqdn" {
-  description = "FQDN of the Navigator Container App"
+  description = "FQDN of the Navigator Container App (internal-only, accessible via Application Gateway)"
   value       = azurerm_container_app.navigator.ingress[0].fqdn
 }
 
 output "container_apps_url" {
-  description = "Full HTTPS URL of the Navigator application"
+  description = "Full HTTPS URL of the Navigator application (internal-only, accessible via Application Gateway)"
   value       = "https://${azurerm_container_app.navigator.ingress[0].fqdn}"
+}
+
+# T044: Container Apps Private DNS outputs
+output "private_dns_zone_name" {
+  description = "Name of the Private DNS zone for custom domain resolution"
+  value       = var.domain_name != null ? azurerm_private_dns_zone.container_apps[0].name : ""
+}
+
+output "container_apps_internal_fqdn" {
+  description = "Internal FQDN for Container Apps (resolved via Private DNS)"
+  value       = azurerm_container_app_environment.main.default_domain
+}
+
+# T042: Application Gateway outputs
+output "appgw_public_ip" {
+  description = "Public IP address of the Application Gateway"
+  value       = azurerm_public_ip.appgw.ip_address
+}
+
+output "appgw_fqdn" {
+  description = "FQDN of the Application Gateway public IP (if configured)"
+  value       = azurerm_public_ip.appgw.fqdn != null ? azurerm_public_ip.appgw.fqdn : ""
+}
+
+# T043: ACME Certificate outputs
+output "certificate_expiry" {
+  description = "Expiry date of the ACME certificate (empty if domain_name not configured)"
+  value       = var.domain_name != null ? acme_certificate.main[0].certificate_not_after : ""
+  sensitive   = false
 }
 
 # PostgreSQL Outputs

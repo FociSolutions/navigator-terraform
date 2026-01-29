@@ -34,22 +34,6 @@ resource "azurerm_network_security_group" "container_apps" {
   })
 }
 
-# Container Apps NSG Rules - Inbound
-# trivy:ignore:AVD-AZU-0047 Public web application requires unrestricted HTTPS inbound access
-resource "azurerm_network_security_rule" "container_apps_inbound_https" {
-  access                      = "Allow"
-  destination_address_prefix  = "*"
-  destination_port_range      = "443"
-  direction                   = "Inbound"
-  name                        = "AllowHttpsInbound"
-  network_security_group_name = azurerm_network_security_group.container_apps.name
-  priority                    = 100
-  protocol                    = "Tcp"
-  resource_group_name         = var.resource_group_name
-  source_address_prefix       = "*"
-  source_port_range           = "*"
-}
-
 # Container Apps NSG Rules - Outbound
 resource "azurerm_network_security_rule" "container_apps_outbound_postgresql" {
   access                      = "Allow"
