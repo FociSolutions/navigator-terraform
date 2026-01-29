@@ -225,11 +225,4 @@ resource "azurerm_application_gateway" "main" {
   firewall_policy_id = var.enable_waf ? azurerm_web_application_firewall_policy.appgw[0].id : null
 
   tags = var.tags
-
-  lifecycle {
-    # Certificate data changes trigger replace, but we want in-place update
-    ignore_changes = [
-      ssl_certificate
-    ]
-  }
 }
