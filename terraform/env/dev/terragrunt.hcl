@@ -25,7 +25,7 @@ inputs = {
 
   # Container Apps Configuration (minimal for dev)
   container_cpu    = 0.5
-  container_memory = "1.0Gi"
+  container_memory = "1Gi"
   min_replicas     = 0  # Scale to zero for cost savings
   max_replicas     = 2
 

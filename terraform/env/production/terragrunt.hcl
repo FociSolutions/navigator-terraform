@@ -25,7 +25,7 @@ inputs = {
 
   # Container Apps Configuration (production sizing)
   container_cpu    = 0.5
-  container_memory = "1.0Gi"
+  container_memory = "1Gi"
   min_replicas     = 1  # Always keep 1 instance running
   max_replicas     = 10
 
