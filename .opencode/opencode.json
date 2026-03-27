@@ -18,7 +18,9 @@
         "-i",
         "--rm",
         "hashicorp/terraform-mcp-server:0.3.3"
-      ]
+      ],
+      // Enable during implementaion to access up-to-date provider information
+      "enabled": false,
     },
     "azure": {
       "type": "local",
@@ -27,7 +29,9 @@
         "@azure/mcp@latest",
         "server",
         "start"
-      ]
+      ],
+      // Enable during debugging
+      "enabled": false,
     }
   },
   "instructions": [".github/instructions/terraform.instructions.md"],
